@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Export QTI · Exam Platform{% endblock %}
+{% block content %}
+<h1>Export item bank</h1>
+<p class="sub">Download all active questions as a QTI 3.0 content package (a .zip you
+   can import into another QTI-compatible system, or back into this one).</p>
+<div class="panel">
+  <p>{{ count }} active question{{ count|pluralize }} will be exported.</p>
+  <form method="post">
+    {% csrf_token %}
+    <button class="btn" type="submit">Download QTI 3.0 package (.zip)</button>
+  </form>
+  <p class="help" style="margin-top:14px;">
+    Standard QTI carries the stem, choices, correct answer, max score and marking
+    rubric. Topic, difficulty and cognitive level travel in the package manifest
+    under our metadata namespace, so they round-trip on re-import and are safely
+    ignored by other QTI tools.
+  </p>
+</div>
+<p><a href="{% url 'itembank:item_list' %}">← Back to item bank</a></p>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Organization · Exam Platform{% endblock %}
+{% block content %}
+<h1>Organization</h1>
+<p class="sub">Manage your organization's name and members.</p>
+
+<div class="panel">
+  <h2 style="margin-top:0">Details</h2>
+  <form method="post">
+    {% csrf_token %}
+    <label for="{{ form.name.id_for_label }}">Name</label>
+    {{ form.name }}
+    {% if form.name.errors %}<ul class="errorlist">{% for e in form.name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    <div style="margin-top:12px;"><button class="btn" type="submit">Save</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">Members</h2>
+  <table>
+    <thead><tr><th>Email</th><th>Name</th><th>Role</th><th></th></tr></thead>
+    <tbody>
+      {% for m in memberships %}
+      <tr>
+        <td>{{ m.user.email }}</td>
+        <td>{{ m.user.get_full_name|default:"—" }}</td>
+        <td><span class="badge">{{ m.get_role_display }}</span></td>
+        <td style="text-align:right">
+          {% if m.user_id != user.id %}
+          <form method="post" action="{% url 'org_member_remove' m.pk %}" style="margin:0">
+            {% csrf_token %}
+            <button class="btn ghost small" type="submit">Remove</button>
+          </form>
+          {% else %}<span class="muted">You</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">Invite a teacher</h2>
+  <form method="post" action="{% url 'org_invite' %}">
+    {% csrf_token %}
+    <div class="row">
+      <div style="flex:2">
+        <label for="{{ invite_form.email.id_for_label }}">Email</label>
+        {{ invite_form.email }}
+      </div>
+      <div style="flex:1">
+        <label for="{{ invite_form.role.id_for_label }}">Role</label>
+        {{ invite_form.role }}
+      </div>
+    </div>
+    <div style="margin-top:12px;"><button class="btn" type="submit">Create invite link</button></div>
+  </form>
+
+  {% if invite_links %}
+    <h3 style="margin-top:20px;">Pending invites</h3>
+    <p class="help">No email is sent. Share these links directly with each invitee.</p>
+    {% for inv, link in invite_links %}
+      <div style="margin-bottom:10px;">
+        <strong>{{ inv.email }}</strong> ({{ inv.get_role_display }})
+        <div class="link-box">{{ link }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

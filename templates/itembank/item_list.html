@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Item bank · Exam Platform{% endblock %}
+{% block content %}
+<div class="row spread">
+  <div>
+    <h1>Item bank</h1>
+    <p class="sub">Author and tag your questions. {% if max_items %}Plan limit: {{ max_items }} questions.{% endif %}</p>
+  </div>
+  <div class="row">
+    <a class="btn" href="{% url 'itembank:item_create' %}?type=mcq">+ MCQ</a>
+    <a class="btn" href="{% url 'itembank:item_create' %}?type=essay">+ Essay</a>
+    <a class="btn secondary" href="{% url 'itembank:topic_list' %}">Topics</a>
+    <a class="btn secondary" href="{% url 'itembank:qti_import' %}">Import</a>
+    <a class="btn secondary" href="{% url 'itembank:qti_export' %}">Export</a>
+  </div>
+</div>
+
+{% if at_limit %}
+<ul class="messages"><li class="error">
+  You've reached your plan's limit of {{ max_items }} questions.
+  <a href="{% url 'billing' %}">Upgrade</a> to add more.
+</li></ul>
+{% endif %}
+
+<div class="panel">
+  <form method="get" class="filters">
+    <div>
+      <label>Search</label>
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="Title or text">
+    </div>
+    <div>
+      <label>Topic</label>
+      <select name="topic">
+        <option value="">All</option>
+        {% for t in topics %}<option value="{{ t.id }}" {% if filters.topic == t.id|stringformat:'s' %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Type</label>
+      <select name="item_type">
+        <option value="">All</option>
+        {% for t in item_types %}<option value="{{ t.code }}" {% if filters.item_type == t.code %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Difficulty</label>
+      <select name="difficulty">
+        <option value="">All</option>
+        {% for v, label in difficulties %}<option value="{{ v }}" {% if filters.difficulty == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Cognitive</label>
+      <select name="cognitive_level">
+        <option value="">All</option>
+        {% for v, label in cognitive_levels %}<option value="{{ v }}" {% if filters.cognitive_level == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Status</label>
+      <select name="status">
+        <option value="">Active</option>
+        {% for v, label in statuses %}<option value="{{ v }}" {% if filters.status == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><button class="btn secondary" type="submit">Filter</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  {% if items %}
+  <table>
+    <thead><tr><th>Title</th><th>Type</th><th>Topic</th><th>Difficulty</th><th>Cognitive</th><th>Marks</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td><a href="{% url 'itembank:item_detail' item.pk %}">{{ item.title }}</a></td>
+        <td><span class="badge {{ item.item_type }}">{{ item.get_item_type_display }}</span></td>
+        <td>{{ item.topic|default:"—" }}</td>
+        <td><span class="badge {{ item.difficulty }}">{{ item.get_difficulty_display }}</span></td>
+        <td>{{ item.get_cognitive_level_display }}</td>
+        <td>{{ item.marks|floatformat:"-2" }}</td>
+        <td><span class="badge {{ item.status }}">{{ item.get_status_display }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <p>No questions match. Create your first one:</p>
+    <a class="btn" href="{% url 'itembank:item_create' %}?type=mcq">+ New MCQ</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

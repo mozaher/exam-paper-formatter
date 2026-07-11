@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Upgrade required · Exam Platform{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:460px;margin:40px auto;text-align:center;">
+  <h1>Not in your plan</h1>
+  <p class="sub">The <strong>{{ module_code }}</strong> module isn't included in your
+     current plan. Upgrade to unlock it.</p>
+  <a class="btn" href="{% url 'billing' %}">See plans</a>
+</div>
+{% endblock %}

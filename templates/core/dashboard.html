@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Exam Platform{% endblock %}
+{% block content %}
+{% if not current_org %}
+  <div class="panel">
+    <h1>Welcome</h1>
+    <p class="sub">Your account isn't attached to an organization yet.</p>
+    <a class="btn" href="{% url 'signup' %}">Create an organization</a>
+  </div>
+{% else %}
+  <h1>{{ current_org.name }}</h1>
+  <p class="sub">Plan: <strong>{{ current_plan.name }}</strong> · signed in as {{ user.email }}</p>
+
+  <h2>Your modules</h2>
+  <div class="grid">
+    {% for card in module_cards %}
+      <div class="card {% if not card.enabled %}disabled{% endif %}">
+        <h3>{{ card.module.icon }} {{ card.module.name }}</h3>
+        <p class="muted">{{ card.module.description }}</p>
+        {% if card.enabled %}
+          {% if card.stat %}<span class="stat">{{ card.stat }}</span>{% endif %}
+          <div><a class="btn small" href="{% url card.module.url_name %}">Open</a></div>
+        {% else %}
+          <span class="badge">Not in your plan</span>
+          <div><a class="btn small secondary" href="{% url 'billing' %}">Upgrade</a></div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <h2>Coming soon</h2>
+  <div class="grid">
+    {% for code, name, desc in planned_modules %}
+      <div class="card disabled">
+        <h3>{{ name }}</h3>
+        <p class="muted">{{ desc }}</p>
+        <span class="badge">Planned</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

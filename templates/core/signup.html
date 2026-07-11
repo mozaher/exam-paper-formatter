@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sign up · Exam Platform{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:480px;margin:32px auto;">
+  <h1>Create your organization</h1>
+  <p class="sub">You'll be the owner. Start on the free plan; upgrade anytime.</p>
+  <form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    {% endfor %}
+    <div class="row" style="margin-top:18px;">
+      <button class="btn" type="submit">Create organization</button>
+      <a href="{% url 'login' %}">I already have an account</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

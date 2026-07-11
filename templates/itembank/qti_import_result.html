@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Import result · Exam Platform{% endblock %}
+{% block content %}
+<h1>Import complete</h1>
+<p class="sub">
+  {{ result.created|length }} created ·
+  {{ result.skipped|length }} skipped ·
+  {{ result.errors|length }} error{{ result.errors|length|pluralize }}
+</p>
+
+{% if result.created %}
+<div class="panel">
+  <h2 style="margin-top:0">Created</h2>
+  <ul>{% for item in result.created %}
+    <li><a href="{% url 'itembank:item_detail' item.pk %}">{{ item.title }}</a>
+        <span class="badge {{ item.item_type }}">{{ item.get_item_type_display }}</span></li>
+  {% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if result.skipped %}
+<div class="panel">
+  <h2 style="margin-top:0">Skipped</h2>
+  <ul>{% for name, reason in result.skipped %}<li>{{ name }} — <span class="muted">{{ reason }}</span></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if result.errors %}
+<div class="panel">
+  <h2 style="margin-top:0">Errors</h2>
+  <ul>{% for name, message in result.errors %}<li><span class="mono">{{ name }}</span> — <span class="muted">{{ message }}</span></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="row">
+  <a class="btn" href="{% url 'itembank:item_list' %}">Go to item bank</a>
+  <a class="btn secondary" href="{% url 'itembank:qti_import' %}">Import another file</a>
+</div>
+{% endblock %}

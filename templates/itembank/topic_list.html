@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Topics · Exam Platform{% endblock %}
+{% block content %}
+<h1>Topics</h1>
+<p class="sub">Organize questions by topic (one level of subtopics is supported).</p>
+
+<div class="panel">
+  <h2 style="margin-top:0">Add topic</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="row">
+      <div style="flex:2"><label>Name</label>{{ form.name }}</div>
+      <div style="flex:1"><label>Parent (optional)</label>{{ form.parent }}</div>
+    </div>
+    {% if form.non_field_errors %}<ul class="errorlist">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    <div style="margin-top:12px;"><button class="btn" type="submit">Add topic</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  {% if topics %}
+  <table>
+    <thead><tr><th>Topic</th><th>Questions</th><th></th></tr></thead>
+    <tbody>
+      {% for topic in topics %}
+      <tr>
+        <td><strong>{{ topic.name }}</strong></td>
+        <td>{{ topic.items.count }}</td>
+        <td style="text-align:right">
+          <form method="post" action="{% url 'itembank:topic_delete' topic.pk %}" style="margin:0"
+                onsubmit="return confirm('Delete this topic?')">
+            {% csrf_token %}<button class="btn ghost small" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+        {% for child in topic.children.all %}
+        <tr>
+          <td style="padding-left:28px">↳ {{ child.name }}</td>
+          <td>{{ child.items.count }}</td>
+          <td style="text-align:right">
+            <form method="post" action="{% url 'itembank:topic_delete' child.pk %}" style="margin:0"
+                  onsubmit="return confirm('Delete this subtopic?')">
+              {% csrf_token %}<button class="btn ghost small" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No topics yet.</div>
+  {% endif %}
+</div>
+<p><a href="{% url 'itembank:item_list' %}">← Back to item bank</a></p>
+{% endblock %}

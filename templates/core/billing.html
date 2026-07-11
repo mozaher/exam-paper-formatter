@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Billing · Exam Platform{% endblock %}
+{% block content %}
+<h1>Billing &amp; plan</h1>
+<p class="sub">
+  Current plan: <strong>{{ active_plan.name }}</strong>.
+  {% if not self_serve %}Contact your administrator to change plans.{% endif %}
+</p>
+<div class="grid">
+  {% for plan in plans %}
+    <div class="card {% if plan.code == active_plan.code %}{% else %}disabled{% endif %}">
+      <h3>{{ plan.name }}</h3>
+      <div class="stat">{{ plan.price_display }}</div>
+      <div class="pill-row">
+        {% for m in plan.features.modules %}<span class="badge">{{ m }}</span>{% endfor %}
+      </div>
+      {% if plan.features.limits.max_items %}
+        <p class="help">Up to {{ plan.features.limits.max_items }} questions.</p>
+      {% else %}
+        <p class="help">Unlimited questions.</p>
+      {% endif %}
+      {% if plan.code == active_plan.code %}
+        <span class="badge published">Current plan</span>
+      {% elif self_serve and current_membership.is_org_admin %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="plan_code" value="{{ plan.code }}">
+          <button class="btn small" type="submit">Switch to {{ plan.name }}</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+<p class="help" style="margin-top:16px;">
+  This deployment uses a manual billing provider (plan changes are immediate, no
+  payment). A payment provider such as Stripe plugs in behind the same interface —
+  see <span class="mono">docs/architecture.md</span>.
+</p>
+{% endblock %}

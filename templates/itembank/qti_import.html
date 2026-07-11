@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Import QTI · Exam Platform{% endblock %}
+{% block content %}
+<h1>Import questions</h1>
+<p class="sub">Upload a QTI 3.0 content package (.zip) or a single assessment-item XML file.</p>
+<div class="panel">
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label for="{{ form.file.id_for_label }}">{{ form.file.label }}</label>
+    {{ form.file }}
+    <p class="help">{{ form.file.help_text }}</p>
+    {% if form.file.errors %}<ul class="errorlist">{% for e in form.file.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    <div style="margin-top:14px;"><button class="btn" type="submit">Import</button></div>
+  </form>
+  <p class="help" style="margin-top:14px;">
+    Supported interactions: multiple choice and extended text (essay). Items already
+    in your bank (matched by QTI identifier) are skipped. Uploaded XML is parsed
+    safely — no external entities or network fetches.
+  </p>
+</div>
+<p><a href="{% url 'itembank:item_list' %}">← Back to item bank</a></p>
+{% endblock %}

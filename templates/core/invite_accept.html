@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Accept invitation · Exam Platform{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:460px;margin:32px auto;">
+  <h1>Join {{ invitation.org.name }}</h1>
+  <p class="sub">You were invited as <strong>{{ invitation.get_role_display }}</strong>
+     ({{ invitation.email }}). Set a password to create your account.</p>
+  <form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    {% endfor %}
+    <div style="margin-top:16px;"><button class="btn" type="submit">Join organization</button></div>
+  </form>
+</div>
+{% endblock %}

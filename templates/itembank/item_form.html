@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}New{% else %}Edit{% endif %} {{ spec.label }} · Exam Platform{% endblock %}
+{% block content %}
+<h1>{% if is_new %}New{% else %}Edit{% endif %} {{ spec.label }} question</h1>
+<p class="sub">{{ spec.description }}</p>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="item_type" value="{{ spec.code }}">
+  <div class="panel">
+    <label for="{{ form.title.id_for_label }}">Title (internal label)</label>
+    {{ form.title }}
+    {% if form.title.errors %}<ul class="errorlist">{% for e in form.title.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+    <label for="{{ form.body.id_for_label }}">Question text</label>
+    {{ form.body }}
+    <p class="help">A blank line starts a new paragraph.</p>
+    {% if form.body.errors %}<ul class="errorlist">{% for e in form.body.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+    {% if form.model_answer %}
+      <label for="{{ form.model_answer.id_for_label }}">Marking guide / model answer</label>
+      {{ form.model_answer }}
+      <p class="help">Shown to markers only; exported as a QTI scorer rubric.</p>
+    {% endif %}
+  </div>
+
+  {% if formset %}
+  <div class="panel">
+    <h2 style="margin-top:0">Answer choices</h2>
+    <p class="help">Provide at least two options and mark exactly one as correct.</p>
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}<ul class="errorlist">{% for e in formset.non_form_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    <table>
+      <thead><tr><th>Choice</th><th style="width:90px">Correct</th>{% if not is_new %}<th style="width:70px">Delete</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for cf in formset %}
+        <tr>
+          {{ cf.id }}
+          <td>{{ cf.text }}{% if cf.text.errors %}<ul class="errorlist">{% for e in cf.text.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}</td>
+          <td style="text-align:center">{{ cf.is_correct }}</td>
+          {% if not is_new %}<td style="text-align:center">{{ cf.DELETE }}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <div class="filters">
+      <div>
+        <label for="{{ form.topic.id_for_label }}">Topic</label>
+        {{ form.topic }}
+      </div>
+      <div>
+        <label for="{{ form.difficulty.id_for_label }}">Difficulty</label>
+        {{ form.difficulty }}
+      </div>
+      <div>
+        <label for="{{ form.cognitive_level.id_for_label }}">Cognitive level</label>
+        {{ form.cognitive_level }}
+      </div>
+      <div>
+        <label for="{{ form.marks.id_for_label }}">Marks</label>
+        {{ form.marks }}
+      </div>
+      <div>
+        <label for="{{ form.status.id_for_label }}">Status</label>
+        {{ form.status }}
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="btn" type="submit">{% if is_new %}Create question{% else %}Save changes{% endif %}</button>
+    <a class="btn ghost" href="{% url 'itembank:item_list' %}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

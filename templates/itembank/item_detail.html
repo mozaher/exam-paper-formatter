@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title }} · Exam Platform{% endblock %}
+{% block content %}
+<div class="row spread">
+  <div>
+    <h1>{{ item.title }}</h1>
+    <div class="pill-row">
+      <span class="badge {{ item.item_type }}">{{ item.get_item_type_display }}</span>
+      <span class="badge {{ item.difficulty }}">{{ item.get_difficulty_display }}</span>
+      <span class="badge">{{ item.get_cognitive_level_display }}</span>
+      <span class="badge">{{ item.marks|floatformat:"-2" }} marks</span>
+      <span class="badge {{ item.status }}">{{ item.get_status_display }}</span>
+      {% if item.topic %}<span class="badge">{{ item.topic }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="row">
+    <a class="btn" href="{% url 'itembank:item_edit' item.pk %}">Edit</a>
+    <a class="btn secondary" href="{% url 'itembank:item_qti_xml' item.pk %}">QTI XML</a>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">Question</h2>
+  {% for para in item.body.splitlines %}{% if para %}<p>{{ para }}</p>{% endif %}{% endfor %}
+
+  {% if item.item_type == 'mcq' %}
+    <h2>Choices</h2>
+    <ul>
+      {% for choice in item.choices.all %}
+        <li>{{ choice.text }} {% if choice.is_correct %}<span class="badge published">correct</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% elif item.model_answer %}
+    <h2>Marking guide</h2>
+    {% for para in item.model_answer.splitlines %}{% if para %}<p>{{ para }}</p>{% endif %}{% endfor %}
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="row spread">
+    <span class="muted mono">QTI id: {{ item.qti_identifier }}</span>
+    <form method="post" action="{% url 'itembank:item_archive' item.pk %}" style="margin:0"
+          onsubmit="return confirm('Archive this question?')">
+      {% csrf_token %}
+      <button class="btn ghost small" type="submit">Archive</button>
+    </form>
+  </div>
+</div>
+<p><a href="{% url 'itembank:item_list' %}">← Back to item bank</a></p>
+{% endblock %}

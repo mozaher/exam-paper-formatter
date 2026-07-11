@@ -1,0 +1,45 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Exam Platform{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'app.css' %}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{% url 'dashboard' %}">📝 Exam Platform</a>
+    {% if user.is_authenticated %}
+    <nav>
+      <a href="{% url 'dashboard' %}">Dashboard</a>
+      {% for entry in nav_modules %}
+        {% if entry.enabled %}
+          <a href="{% url entry.module.url_name %}">{{ entry.module.name }}</a>
+        {% endif %}
+      {% endfor %}
+      <a href="{% url 'billing' %}">Billing</a>
+      {% if current_membership.is_org_admin %}<a href="{% url 'org_settings' %}">Organization</a>{% endif %}
+    </nav>
+    <div class="spacer"></div>
+    <span class="who">
+      {{ user.email }}{% if current_org %} · {{ current_org.name }}{% endif %}
+    </span>
+    <form method="post" action="{% url 'logout' %}" style="margin:0">
+      {% csrf_token %}
+      <button class="btn ghost small" type="submit">Sign out</button>
+    </form>
+    {% else %}
+    <div class="spacer"></div>
+    <nav><a href="{% url 'login' %}">Sign in</a> <a href="{% url 'signup' %}">Sign up</a></nav>
+    {% endif %}
+  </header>
+  <main class="layout">
+    {% if messages %}
+    <ul class="messages">
+      {% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
