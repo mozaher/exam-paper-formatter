@@ -12,7 +12,15 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from pdfminer.high_level import extract_pages
-from pdfminer.layout import LAParams, LTChar, LTTextContainer, LTTextLine
+from pdfminer.layout import (
+    LAParams,
+    LTChar,
+    LTCurve,
+    LTLine,
+    LTRect,
+    LTTextContainer,
+    LTTextLine,
+)
 
 PT_TO_MM = 25.4 / 72.0
 MM_TO_PT = 72.0 / 25.4
@@ -71,6 +79,8 @@ class Measurements:
     margins_measured: dict = field(
         default_factory=lambda: {"left": True, "right": True, "top": True, "bottom": True}
     )
+    # Is there a wide horizontal rule in the header area of page 1?
+    has_header_rule: bool = False
 
 
 def extract_measurements(pdf_bytes: bytes) -> Measurements:
@@ -87,6 +97,17 @@ def extract_measurements(pdf_bytes: bytes) -> Measurements:
     font_counter = Counter()
     for pageno, page in enumerate(pages):
         for element in page:
+            # Wide, thin horizontal graphics near the top of page 1 = a
+            # header rule (Word bottom-borders arrive as LTRect).
+            if pageno == 0 and isinstance(element, (LTLine, LTRect, LTCurve)):
+                height = element.y1 - element.y0
+                width = element.x1 - element.x0
+                if (
+                    height <= 3
+                    and width >= 0.4 * page.width
+                    and element.y0 >= 0.8 * page.height
+                ):
+                    m.has_header_rule = True
             if not isinstance(element, LTTextContainer):
                 continue
             for obj in element:

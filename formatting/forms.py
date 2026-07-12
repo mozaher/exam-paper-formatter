@@ -33,18 +33,47 @@ class TemplateSampleUploadForm(forms.Form):
 
 
 class PaperTemplateForm(forms.ModelForm):
+    candidate_fields_csv = forms.CharField(
+        required=False,
+        label="Cover fill-in fields",
+        help_text="Comma-separated, e.g.: Name, Date, Class. Printed as "
+        "“Name: ____” lines on the cover.",
+    )
+
     class Meta:
         model = PaperTemplate
         fields = [
             "name",
             "institution_name",
             "subtitle",
+            "cover_heading",
+            "address_text",
             "footer_text",
             "default_instructions",
             "font",
             "paper_size",
         ]
-        widgets = {"default_instructions": forms.Textarea(attrs={"rows": 4})}
+        widgets = {
+            "default_instructions": forms.Textarea(attrs={"rows": 4}),
+            "address_text": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["candidate_fields_csv"].initial = ", ".join(
+                self.instance.candidate_fields or []
+            )
+
+    def save(self, commit=True):
+        template = super().save(commit=False)
+        raw = self.cleaned_data.get("candidate_fields_csv", "")
+        template.candidate_fields = [
+            part.strip()[:40] for part in raw.split(",") if part.strip()
+        ][:8]
+        if commit:
+            template.save()
+        return template
 
 
 class PaperForm(forms.ModelForm):

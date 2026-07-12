@@ -67,8 +67,11 @@ def _sample_data(institution_name="", subtitle="", footer_text="") -> PaperData:
 
 
 def build_sample_pdf(layout: dict, *, institution_name="", subtitle="", footer_text="") -> bytes:
-    return build_pdf(
-        _sample_data(institution_name, subtitle, footer_text),
-        layout=layout,
-        answers=False,
-    )
+    layout = layout or {}
+    data = _sample_data(institution_name, subtitle, footer_text)
+    # Cover slots proposed by extraction ride in the spec; show them so the
+    # side-by-side reflects what would actually be saved.
+    data.cover_heading = layout.get("cover_heading", "")
+    data.address_text = layout.get("address_text", "")
+    data.candidate_fields = list(layout.get("candidate_fields") or [])
+    return build_pdf(data, layout=layout, answers=False)

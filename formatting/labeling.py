@@ -20,6 +20,7 @@ The labeler is a pluggable step behind get_labeler():
 Either way the output feeds the same reviewable spec + confirmation flow.
 """
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -30,7 +31,17 @@ BRACKETED_MARKS_RE = re.compile(
     r"[\[\(]\s*(\d+(?:\.\d+)?)\s*marks?\s*[\]\)]", re.IGNORECASE
 )
 BARE_MARKS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*marks?\b", re.IGNORECASE)
-QUESTION_START_RE = re.compile(r"^\s*(?:q(?:uestion)?\s*)?\d{1,3}\s*[\.\):]", re.IGNORECASE)
+# Colon must not be followed by a digit, so times ("4:00 PM") don't count.
+QUESTION_START_RE = re.compile(
+    r"^\s*(?:q(?:uestion)?\s*)?\d{1,3}\s*(?:[\.\)]|:(?!\d))", re.IGNORECASE
+)
+OPTION_RE = re.compile(r"^\s*(\()?([A-Ha-h])([\.\)])\s+")
+FIELD_LABEL_RE = re.compile(r"^\s*([A-Z][A-Za-z ./#]{0,22})\s*[:：]")
+# Labels that look like fill-in fields but aren't candidate details.
+FIELD_STOPLIST = {
+    "instructions", "instruction", "note", "notes", "warning", "important",
+    "answer", "answers", "example", "examples", "marks", "total",
+}
 
 
 @dataclass
@@ -50,6 +61,13 @@ class LabelResult:
     rule_points: list = field(default_factory=list)
     question_count: int = 0
     marks_count: int = 0
+    # Structural proposals from the cover page / question layout:
+    heading_text: str = ""
+    address_lines: list = field(default_factory=list)
+    candidate_labels: list = field(default_factory=list)
+    option_style: str = ""
+    option_samples: int = 0
+    question_x0s_mm: list = field(default_factory=list)
 
 
 def _marks_in(text):
@@ -66,6 +84,7 @@ class HeuristicLabeler:
         result = LabelResult(labeler=self.name)
 
         line_marks = {}
+        option_styles = []
         for i, line in enumerate(m.lines):
             marks = _marks_in(line.text)
             is_question = bool(QUESTION_START_RE.match(line.text))
@@ -77,7 +96,24 @@ class HeuristicLabeler:
                 )
             if is_question:
                 result.question_count += 1
+                result.question_x0s_mm.append(round(line.x0 * PT_TO_MM, 1))
                 result.regions.append(LabeledRegion("question", line.page, line.text))
+            option = OPTION_RE.match(line.text)
+            if option is not None and not is_question:
+                paren, letter, punct = option.groups()
+                if paren:
+                    option_styles.append("(a)")
+                elif letter.isupper():
+                    option_styles.append("A." if punct == "." else "A)")
+                else:
+                    option_styles.append("a)")
+
+        if option_styles:
+            style, count = Counter(option_styles).most_common(1)[0]
+            result.option_style = style
+            result.option_samples = count
+
+        self._label_cover(m, result)
 
         floor = -1  # index of the previous gap's line-above; don't scan past it
         for gap in m.gaps:
@@ -111,6 +147,64 @@ class HeuristicLabeler:
                     )
                 )
         return result
+
+    def _label_cover(self, m: Measurements, result: LabelResult):
+        """Cover-page structure: big heading, corner address, fill-in fields."""
+        page1 = [ln for ln in m.lines if ln.page == 0]
+        if not page1:
+            return
+        body_size = m.body_font_size_pt or 11.0
+        page_center = m.page_width_pt / 2.0
+
+        # Heading: the largest clearly-oversized, horizontally centered,
+        # short text line on page 1.
+        best = None
+        for line in page1:
+            if line.font_size < body_size * 1.25 or len(line.text) > 40:
+                continue
+            center = (line.x0 + line.x1) / 2.0
+            if abs(center - page_center) > 0.12 * m.page_width_pt:
+                continue
+            if best is None or line.font_size > best.font_size:
+                best = line
+        if best is not None:
+            result.heading_text = best.text.strip()
+            result.regions.append(LabeledRegion("heading", 0, best.text))
+
+        # Address block: right-side lines in the top ~30% of page 1, above
+        # the heading (fill-in rows below it must not bleed in).
+        address_floor = best.y1 if best is not None else 0.7 * m.page_height_pt
+        for line in page1:
+            if line is best or FIELD_LABEL_RE.match(line.text):
+                continue
+            if (
+                line.y0 >= max(address_floor, 0.7 * m.page_height_pt)
+                and line.x0 >= 0.55 * m.page_width_pt
+                and len(result.address_lines) < 6
+            ):
+                result.address_lines.append(line.text.strip())
+                result.regions.append(LabeledRegion("address", 0, line.text))
+
+        # Candidate fill-in fields: "Label:" lines above the first question.
+        first_q_index = next(
+            (i for i, ln in enumerate(m.lines) if QUESTION_START_RE.match(ln.text)),
+            len(m.lines),
+        )
+        seen = set()
+        for i, line in enumerate(m.lines[:first_q_index]):
+            if line.page != 0:
+                break
+            match = FIELD_LABEL_RE.match(line.text)
+            if match is None:
+                continue
+            label = match.group(1).strip()
+            if label.lower() in FIELD_STOPLIST or label.lower() in seen:
+                continue
+            if len(result.candidate_labels) >= 8:
+                break
+            seen.add(label.lower())
+            result.candidate_labels.append(label)
+            result.regions.append(LabeledRegion("candidate_field", 0, line.text))
 
 
 class LLMLabeler:

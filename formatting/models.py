@@ -49,6 +49,22 @@ class PaperTemplate(TenantOwnedModel):
     margin_bottom_mm = models.DecimalField(max_digits=4, decimal_places=1, default=20)
     answer_base_mm = models.DecimalField(max_digits=4, decimal_places=1, default=15)
     answer_per_mark_mm = models.DecimalField(max_digits=4, decimal_places=1, default=18)
+    question_indent_mm = models.DecimalField(max_digits=4, decimal_places=1, default=0)
+    option_label_style = models.CharField(max_length=8, default="A.")
+    show_header_rule = models.BooleanField(default=True)
+
+    # Cover-page slots (proposed by extraction, editable as plain text).
+    cover_heading = models.CharField(
+        max_length=120, blank=True,
+        help_text="Large centered heading on the first page, e.g. “EXAM”.",
+    )
+    address_text = models.TextField(
+        blank=True, help_text="Shown in the top-right corner of the first page."
+    )
+    candidate_fields = models.JSONField(
+        default=list, blank=True,
+        help_text="Fill-in lines printed on the cover, e.g. Name, Date, Class.",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

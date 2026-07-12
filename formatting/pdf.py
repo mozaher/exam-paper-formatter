@@ -77,6 +77,9 @@ class PaperData:
     institution_name: str = ""
     subtitle: str = ""
     footer_text: str = ""
+    cover_heading: str = ""
+    address_text: str = ""
+    candidate_fields: list = field(default_factory=list)
     sections: list = field(default_factory=list)
 
     @property
@@ -99,6 +102,9 @@ def paper_to_data(paper) -> PaperData:
         institution_name=template.institution_name if template else "",
         subtitle=template.subtitle if template else "",
         footer_text=template.footer_text if template else "",
+        cover_heading=template.cover_heading if template else "",
+        address_text=template.address_text if template else "",
+        candidate_fields=list(template.candidate_fields or []) if template else [],
     )
     data.exam_date = paper.exam_date
     for section in paper.sections.all():
@@ -212,7 +218,29 @@ def _styles(layout):
             leading=(size - 0.5) * layout["line_spacing"], spaceAfter=4,
             textColor=colors.Color(0.15, 0.15, 0.15),
         ),
-        "option": ParagraphStyle("option", leftIndent=10 * mm, spaceAfter=2, **base),
+        "option": ParagraphStyle(
+            "option",
+            leftIndent=(10 + layout["question_indent_mm"]) * mm,
+            spaceAfter=2,
+            **base,
+        ),
+        "qbody": ParagraphStyle(
+            "qbody", spaceAfter=para_after,
+            leftIndent=layout["question_indent_mm"] * mm, **base,
+        ),
+        "address": ParagraphStyle(
+            "address", fontName=font["base"], fontSize=size - 1.5,
+            leading=(size - 1.5) * 1.25, alignment=2,  # right
+            textColor=colors.Color(0.25, 0.25, 0.25),
+        ),
+        "coverheading": ParagraphStyle(
+            "coverheading", fontName=font["bold"], fontSize=size + 7,
+            leading=(size + 7) * 1.3, alignment=TA_CENTER,
+            spaceBefore=10, spaceAfter=8,
+        ),
+        "candidate": ParagraphStyle(
+            "candidate", spaceAfter=8, **base,
+        ),
         "answer": ParagraphStyle(
             "answer", fontName=font["base"], fontSize=size - 0.5,
             leading=(size - 0.5) * layout["line_spacing"], leftIndent=6 * mm,
@@ -231,15 +259,23 @@ def _styles(layout):
     }
 
 
-def _header_block(data: PaperData, styles):
+def _header_block(data: PaperData, styles, layout):
     flow = []
+    if data.address_text:
+        for line in data.address_text.splitlines():
+            if line.strip():
+                flow.append(Paragraph(_esc(line.strip()), styles["address"]))
+        flow.append(Spacer(0, 6))
     if data.institution_name:
         flow.append(Paragraph(_esc(data.institution_name), styles["institution"]))
         if data.subtitle:
             flow.append(Paragraph(_esc(data.subtitle), styles["subtitle"]))
-        flow.append(
-            HRFlowable(width="100%", thickness=1, color=colors.black, spaceBefore=6, spaceAfter=2)
-        )
+        if layout["show_header_rule"]:
+            flow.append(
+                HRFlowable(width="100%", thickness=1, color=colors.black, spaceBefore=6, spaceAfter=2)
+            )
+    if data.cover_heading:
+        flow.append(Paragraph(_esc(data.cover_heading), styles["coverheading"]))
     flow.append(Paragraph(_esc(data.title), styles["examtitle"]))
 
     meta_bits = []
@@ -251,6 +287,16 @@ def _header_block(data: PaperData, styles):
         meta_bits.append(f"Duration: {_esc(data.duration_text)}")
     meta_bits.append(f"Total marks: {Decimal(data.total_marks).normalize():f}")
     flow.append(Paragraph(" &nbsp;·&nbsp; ".join(meta_bits), styles["meta"]))
+
+    if data.candidate_fields:
+        flow.append(Spacer(0, 10))
+        for label in data.candidate_fields:
+            flow.append(
+                Paragraph(
+                    f"{_esc(label)}: " + "_" * 46,
+                    styles["candidate"],
+                )
+            )
     return flow
 
 
@@ -275,9 +321,20 @@ def _instructions_block(data: PaperData, styles):
     return [Spacer(0, 6), table]
 
 
+def _option_label(index, style):
+    letter = OPTION_LETTERS[index] if index < len(OPTION_LETTERS) else str(index + 1)
+    if style == "A)":
+        return f"{letter})"
+    if style == "(a)":
+        return f"({letter.lower()})"
+    if style == "a)":
+        return f"{letter.lower()})"
+    return f"{letter}."
+
+
 def _question_flowables(number, q: QuestionData, data: PaperData, styles, layout, answers):
     flow = []
-    body_style = styles["body"]
+    body_style = styles["qbody"]
     first, *rest = (q.body or "").split("\n\n") or [""]
     lead = Paragraph(
         f"<b>{number}.</b> &nbsp;{_esc(first.strip()).replace(chr(10), '<br/>')}",
@@ -302,15 +359,16 @@ def _question_flowables(number, q: QuestionData, data: PaperData, styles, layout
             flow.append(Paragraph(_esc(part.strip()).replace("\n", "<br/>"), body_style))
 
     if q.item_type == "mcq":
+        style_key = layout["option_label_style"]
         for i, (text, is_correct) in enumerate(q.choices):
-            letter = OPTION_LETTERS[i] if i < len(OPTION_LETTERS) else str(i + 1)
+            label = _option_label(i, style_key)
             if answers and is_correct:
-                flow.append(Paragraph(f"<b>{letter}. {_esc(text)} &nbsp;✓</b>", styles["option"]))
+                flow.append(Paragraph(f"<b>{label} {_esc(text)} &nbsp;✓</b>", styles["option"]))
             else:
-                flow.append(Paragraph(f"{letter}. {_esc(text)}", styles["option"]))
+                flow.append(Paragraph(f"{label} {_esc(text)}", styles["option"]))
         if answers:
             correct = [
-                OPTION_LETTERS[i] for i, (_, ok) in enumerate(q.choices) if ok
+                _option_label(i, style_key) for i, (_, ok) in enumerate(q.choices) if ok
             ]
             flow.append(
                 Paragraph(f"Answer: {', '.join(correct) or '—'}", styles["answerlabel"])
@@ -360,7 +418,7 @@ def build_pdf(data: PaperData, layout: dict = None, answers: bool = False) -> by
         author=data.institution_name,
     )
 
-    story = _header_block(data, styles)
+    story = _header_block(data, styles, layout)
     if answers:
         story.append(
             Paragraph("MARKING SCHEME — NOT FOR DISTRIBUTION TO CANDIDATES", styles["notice"])
