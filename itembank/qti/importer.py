@@ -80,14 +80,114 @@ def _findall(el, name):
     return [child for child in el.iter() if isinstance(child.tag, str) and _local(child.tag) == name]
 
 
+def _blocks(el):
+    """Flatten an element into plain-text paragraphs.
+
+    Keeps paragraph structure and list items ("- item"), so rubric blocks and
+    stems containing <ul>/<li>/<blockquote> markup survive import instead of
+    being silently dropped.
+    """
+    out = []
+
+    def walk(node):
+        tag = _local(node.tag) if isinstance(node.tag, str) else None
+        if tag in ("p", "blockquote", "pre"):
+            text = " ".join("".join(node.itertext()).split())
+            if text:
+                out.append(text)
+            return
+        if tag == "li":
+            text = " ".join("".join(node.itertext()).split())
+            if text:
+                out.append(f"- {text}")
+            return
+        if tag is None:
+            return
+        for child in node:
+            walk(child)
+
+    walk(el)
+    return out
+
+
 def _text_content(el):
     """All human-readable text inside an element, paragraphs joined by blank lines."""
     if el is None:
         return ""
-    paragraphs = _findall(el, "p")
-    if paragraphs:
-        return "\n\n".join("".join(p.itertext()).strip() for p in paragraphs).strip()
-    return "".join(el.itertext()).strip()
+    blocks = _blocks(el)
+    if blocks:
+        return "\n\n".join(blocks)
+    return " ".join("".join(el.itertext()).split())
+
+
+def _parse_marks(root):
+    """Max score from the SCORE outcome declaration.
+
+    Accepts both the QTI 3 attribute form (normal-maximum="5") and the child
+    element form (<normalMaximum>5.0</normalMaximum>) seen in QTI 2.x-style
+    files. Ignores <defaultValue> — that's the starting score, not the marks.
+    """
+    for od in _findall(root, "qti-outcome-declaration") + _findall(root, "outcomeDeclaration"):
+        if od.get("identifier") != "SCORE":
+            continue
+        value = od.get("normal-maximum") or od.get("normalMaximum")
+        if not value:
+            nm = _find_any(od, "qti-normal-maximum", "normalMaximum")
+            if nm is not None and nm.text:
+                value = nm.text.strip()
+        if value:
+            return value
+    return None
+
+
+# IEEE LOM difficulty vocabulary -> our three levels.
+LOM_DIFFICULTY_MAP = {
+    "very easy": "easy",
+    "easy": "easy",
+    "medium": "medium",
+    "difficult": "hard",
+    "very difficult": "hard",
+    "hard": "hard",
+}
+
+
+def _parse_lom_metadata(root):
+    """Topic + difficulty from IEEE LOM metadata embedded in the item XML.
+
+    Files exported by other tools (and hand-written ones) often carry
+    <lom xmlns="http://ltsc.ieee.org/xsd/LOM"> with general/keyword (topic)
+    and educational/difficulty. Read those so single-file imports keep their
+    tags; our own package manifest metadata still takes precedence when
+    importing a zip.
+    """
+    topic, difficulty = "", ""
+    lom = _find(root, "lom")
+    if lom is None:
+        return topic, difficulty
+
+    general = _find(lom, "general")
+    if general is not None:
+        keyword = _find(general, "keyword")
+        if keyword is not None:
+            string_el = _find(keyword, "string")
+            text = (
+                string_el.text if string_el is not None and string_el.text
+                else "".join(keyword.itertext())
+            )
+            topic = (text or "").strip()
+
+    educational = _find(lom, "educational")
+    if educational is not None:
+        diff_el = _find(educational, "difficulty")
+        if diff_el is not None:
+            value_el = _find(diff_el, "value")
+            text = (
+                value_el.text if value_el is not None and value_el.text
+                else "".join(diff_el.itertext())
+            )
+            difficulty = LOM_DIFFICULTY_MAP.get((text or "").strip().lower(), "")
+
+    return topic, difficulty
 
 
 def parse_item_xml(data: bytes) -> ParsedItem:
@@ -113,12 +213,8 @@ def parse_item_xml(data: bytes) -> ParsedItem:
         body_el, "qti-extended-text-interaction", "extendedTextInteraction"
     )
 
-    marks = None
-    for od in _findall(root, "qti-outcome-declaration") + _findall(root, "outcomeDeclaration"):
-        if od.get("identifier") == "SCORE" and od.get("normal-maximum"):
-            marks = od.get("normal-maximum")
-        elif od.get("identifier") == "SCORE" and od.get("normalMaximum"):
-            marks = od.get("normalMaximum")
+    marks = _parse_marks(root)
+    lom_topic, lom_difficulty = _parse_lom_metadata(root)
 
     if choice_interaction is not None:
         correct_ids = set()
@@ -150,25 +246,38 @@ def parse_item_xml(data: bytes) -> ParsedItem:
             body=body_text,
             marks=marks,
             choices=choices,
+            topic=lom_topic,
+            difficulty=lom_difficulty,
         )
 
     if text_interaction is not None:
-        rubric = _find_any(body_el, "qti-rubric-block", "rubricBlock")
+        # Search the whole item, not just the body: some producers place the
+        # scorer rubric as a sibling of <itemBody> rather than inside it.
+        rubric = _find_any(root, "qti-rubric-block", "rubricBlock")
         model_answer = _text_content(rubric) if rubric is not None else ""
-        # Body text = paragraphs outside the rubric block.
+
+        # Body text = blocks inside the body, excluding rubric + interaction.
+        skip = {
+            "qti-rubric-block",
+            "rubricBlock",
+            "qti-extended-text-interaction",
+            "extendedTextInteraction",
+        }
         paragraphs = []
+        kept_children = []
         for child in list(body_el):
-            if _local(child.tag) in ("qti-rubric-block", "rubricBlock"):
+            if isinstance(child.tag, str) and _local(child.tag) in skip:
                 continue
-            if _local(child.tag) in (
-                "qti-extended-text-interaction",
-                "extendedTextInteraction",
-            ):
-                continue
-            text = "".join(child.itertext()).strip()
-            if text:
-                paragraphs.append(text)
-        body_text = "\n\n".join(paragraphs).strip() or _text_content(body_el)
+            kept_children.append(child)
+            paragraphs.extend(_blocks(child))
+        body_text = "\n\n".join(paragraphs)
+        if not body_text:
+            # Mixed content with no block markup: join raw text of what's left.
+            bits = [body_el.text or ""]
+            for child in kept_children:
+                bits.append("".join(child.itertext()))
+                bits.append(child.tail or "")
+            body_text = " ".join(" ".join(bits).split())
 
         return ParsedItem(
             identifier=identifier,
@@ -177,6 +286,8 @@ def parse_item_xml(data: bytes) -> ParsedItem:
             body=body_text,
             marks=marks,
             model_answer=model_answer,
+            topic=lom_topic,
+            difficulty=lom_difficulty,
         )
 
     raise QtiImportError(
@@ -210,12 +321,19 @@ def parse_manifest_metadata(data: bytes) -> dict:
 
 
 def _is_duplicate(org, identifier: str) -> bool:
+    """True when an ACTIVE item with this QTI identifier already exists.
+
+    Archived items don't count: archiving means "removed from the bank", so
+    re-importing an archived question creates a fresh copy instead of being
+    rejected as a duplicate.
+    """
     if not identifier:
         return False
-    if Item.objects.for_org(org).filter(external_id=identifier).exists():
+    active = Item.objects.for_org(org).exclude(status=Item.Status.ARCHIVED)
+    if active.filter(external_id=identifier).exists():
         return True
     m = UUID_RE.fullmatch(identifier)
-    if m and Item.objects.for_org(org).filter(uuid=m.group(1)).exists():
+    if m and active.filter(uuid=m.group(1)).exists():
         return True
     return False
 
@@ -294,10 +412,12 @@ def import_upload(org, user, filename: str, data: bytes) -> ImportResult:
                 except QtiImportError as exc:
                     result.errors.append((name, str(exc)))
                     continue
+                # Manifest metadata wins; embedded LOM (already on parsed)
+                # remains as the fallback.
                 meta = manifest_meta.get(parsed.identifier, {})
-                parsed.topic = meta.get("topic", "")
-                parsed.difficulty = meta.get("difficulty", "")
-                parsed.cognitive_level = meta.get("cognitive_level", "")
+                parsed.topic = meta.get("topic") or parsed.topic
+                parsed.difficulty = meta.get("difficulty") or parsed.difficulty
+                parsed.cognitive_level = meta.get("cognitive_level") or parsed.cognitive_level
                 _import_one(org, user, parsed, result)
         return result
 

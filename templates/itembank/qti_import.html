@@ -13,9 +13,14 @@
     <div style="margin-top:14px;"><button class="btn" type="submit">Import</button></div>
   </form>
   <p class="help" style="margin-top:14px;">
-    Supported interactions: multiple choice and extended text (essay). Items already
-    in your bank (matched by QTI identifier) are skipped. Uploaded XML is parsed
-    safely — no external entities or network fetches.
+    Supported interactions: multiple choice and extended text (essay). QTI 3.0 and
+    QTI 2.x-style markup are both accepted. Topic and difficulty are read from the
+    package manifest or from IEEE LOM metadata embedded in the item XML; marks come
+    from the SCORE outcome declaration; a scorer rubric block becomes the marking
+    guide. Items already in your bank (matched by QTI identifier) are skipped —
+    archived items don't count, so re-importing an archived question creates a
+    fresh copy. Uploaded XML is parsed safely — no external entities or network
+    fetches.
   </p>
 </div>
 <p><a href="{% url 'itembank:item_list' %}">← Back to item bank</a></p>
