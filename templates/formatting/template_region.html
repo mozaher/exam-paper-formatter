@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Mark the questions area · Exam Platform{% endblock %}
+{% block content %}
+<h1>Where are the dummy questions?</h1>
+<p class="sub">{{ draft.source_filename }} — pick the first and last line of the
+   questions area. Everything between them (inclusive) will be replaced with real
+   questions; everything outside stays exactly as authored.</p>
+
+{% if draft.notes %}
+<div class="panel"><ul style="margin:0 0 0 18px;">
+  {% for note in draft.notes %}<li>{{ note }}</li>{% endfor %}
+</ul></div>
+{% endif %}
+
+<form method="post">
+  {% csrf_token %}
+  <div class="panel" style="max-height:480px;overflow-y:auto;">
+    <table>
+      <thead><tr><th style="width:70px">Starts</th><th style="width:70px">Ends</th><th>Content</th></tr></thead>
+      <tbody>
+        {% for block in blocks %}
+        <tr>
+          <td><input type="radio" name="start" value="{{ block.index }}"
+                     {% if block.index == suggest_start %}checked{% endif %}></td>
+          <td><input type="radio" name="end" value="{{ block.index }}"
+                     {% if block.index == suggest_end %}checked{% endif %}></td>
+          <td class="{% if block.kind == 'blank' %}muted{% endif %}">
+            {% if block.kind == 'table' %}<span class="badge">table</span>
+            {% elif block.kind == 'blank' %}<span class="muted">(empty line)</span>
+            {% else %}{{ block.text }}{% endif %}
+            {% if block.kind == 'question' %}<span class="badge published">question?</span>{% endif %}
+            {% if block.kind == 'option' %}<span class="badge mcq">option</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="row" style="margin-top:14px;">
+    <button class="btn" type="submit">Use this area &amp; preview</button>
+  </div>
+</form>
+<form method="post" action="{% url 'formatting:draft_cancel' draft.pk %}" style="margin-top:10px;">
+  {% csrf_token %}
+  <button class="btn ghost" type="submit">Discard upload</button>
+</form>
+{% endblock %}

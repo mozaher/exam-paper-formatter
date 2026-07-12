@@ -17,6 +17,7 @@ urlpatterns = [
         views.PaperPdfView.as_view(answers=True),
         name="paper_marking_pdf",
     ),
+    path("<int:pk>/paper.docx", views.PaperDocxView.as_view(), name="paper_docx"),
     path("sections/<int:pk>/delete/", views.SectionDeleteView.as_view(), name="section_delete"),
     path("sections/<int:pk>/move/", views.SectionMoveView.as_view(), name="section_move"),
     path("sections/<int:pk>/add/", views.QuestionPickerView.as_view(), name="question_picker"),
@@ -30,9 +31,8 @@ urlpatterns = [
     path("templates/<int:pk>/preview.pdf", views.TemplatePreviewPdfView.as_view(), name="template_preview_pdf"),
     path("templates/from-sample/", views.TemplateFromSampleView.as_view(), name="template_from_sample"),
     path("drafts/<int:pk>/", views.TemplateReviewView.as_view(), name="template_review"),
-    path("drafts/<int:pk>/original.pdf", views.DraftOriginalPdfView.as_view(), name="draft_original_pdf"),
+    path("drafts/<int:pk>/region/", views.TemplateRegionView.as_view(), name="template_region"),
     path("drafts/<int:pk>/preview.pdf", views.DraftPreviewPdfView.as_view(), name="draft_preview_pdf"),
-    path("drafts/<int:pk>/adjust/", views.DraftAdjustView.as_view(), name="draft_adjust"),
     path("drafts/<int:pk>/confirm/", views.DraftConfirmView.as_view(), name="draft_confirm"),
     path("drafts/<int:pk>/cancel/", views.DraftCancelView.as_view(), name="draft_cancel"),
 ]

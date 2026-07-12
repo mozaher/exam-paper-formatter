@@ -4,7 +4,7 @@ from django import forms
 
 from .models import Paper, PaperTemplate, Section
 
-SAMPLE_EXTENSIONS = (".tex", ".docx", ".pdf")
+SAMPLE_EXTENSIONS = (".tex", ".docx")
 SAMPLE_MAX_BYTES = 5 * 1024 * 1024
 
 
@@ -16,17 +16,18 @@ class TemplateSampleUploadForm(forms.Form):
         help_text="Optional — defaults to the file name.",
     )
     file = forms.FileField(
-        label="Sample document",
-        help_text="A .docx, .tex or .pdf file of dummy questions showing your "
-        "desired formatting. It is analysed and immediately discarded — "
-        "never stored.",
+        label="Template document",
+        help_text="A .docx or .tex file containing dummy questions where real "
+        "questions should go. Word files are stripped of macros and embedded "
+        "objects, then the cleaned file itself becomes the template — papers "
+        "are generated inside it.",
     )
 
     def clean_file(self):
         f = self.cleaned_data["file"]
         suffix = Path(f.name).suffix.lower()
         if suffix not in SAMPLE_EXTENSIONS:
-            raise forms.ValidationError("Upload a .docx, .tex or .pdf file.")
+            raise forms.ValidationError("Upload a .docx or .tex file.")
         if f.size > SAMPLE_MAX_BYTES:
             raise forms.ValidationError("File too large (5 MB limit).")
         return f

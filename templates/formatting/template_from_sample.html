@@ -1,9 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Template from sample · Exam Platform{% endblock %}
+{% block title %}Template from your document · Exam Platform{% endblock %}
 {% block content %}
-<h1>Create a template from a sample document</h1>
-<p class="sub">Upload a Word, LaTeX or PDF file containing a few <strong>dummy questions</strong>
-   formatted the way your institution likes its exam papers.</p>
+<h1>Create a template from your own document</h1>
+<p class="sub">Upload the Word or LaTeX file your institution already uses, with a few
+   <strong>dummy questions</strong> where the real ones should go. Papers are then
+   generated <em>inside your document</em> — its fonts, margins, headers, logos and
+   styles stay exactly as authored.</p>
 
 <div class="panel">
   <form method="post" enctype="multipart/form-data">
@@ -18,27 +20,31 @@
     {% if form.file.errors %}<ul class="errorlist">{% for e in form.file.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
     {% if form.non_field_errors %}<ul class="errorlist">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
 
-    <div style="margin-top:16px;"><button class="btn" type="submit">Analyse formatting</button></div>
+    <div style="margin-top:16px;"><button class="btn" type="submit">Upload and analyse</button></div>
   </form>
 </div>
 
 <div class="panel">
   <h2 style="margin-top:0">How it works</h2>
   <ol>
-    <li>Your file is rendered in a locked-down sandbox (no network, strict time and
-        memory limits) and measured: fonts, margins, line and paragraph spacing.</li>
-    <li>Detected regions are labelled — question text, marks like “[5 marks]”, and the
-        blank answer space beneath them — to learn how much space you leave per mark.</li>
-    <li>If everything is clear, your template is created immediately. If anything was
-        ambiguous, you'll see a side-by-side comparison and simple controls to fix it —
-        no technical settings involved.</li>
+    <li><strong>Cleaning:</strong> Word files are unconditionally stripped of macros,
+        DDE fields and embedded objects — by category, no exceptions.</li>
+    <li><strong>Locating the questions:</strong> the dummy-question area is detected
+        automatically (numbered questions, A)/B)/C) options, marks). If it can't be
+        found confidently, you'll simply point out where the questions start and end.</li>
+    <li><strong>Preview & confirm:</strong> you see your own document with sample
+        questions injected. One click saves it as a template.</li>
+    <li><strong>Generation:</strong> every paper replaces only the questions area
+        (and recognized fill-in fields like Subject/Date/Time). Everything else in
+        your file is preserved byte-for-byte. LaTeX templates are compiled in a
+        locked-down sandbox — no shell access, no network, strict limits.</li>
   </ol>
   <p class="help">
-    <strong>Tips for best results:</strong> include 2–3 questions with different marks
-    (e.g. [2 marks] and [5 marks]) followed by the blank space you'd leave for answers,
-    and at least one paragraph long enough to wrap over several lines.
-    <br><strong>Privacy:</strong> the uploaded file is analysed and immediately
-    discarded — only the confirmed formatting settings are stored.
+    <strong>Tips:</strong> include at least two dummy questions (with A)/B)/C)
+    options for multiple choice), and leave the blank space or answer boxes you
+    want after essay questions. In LaTeX you can guarantee detection by wrapping
+    the block in <span class="mono">%%QUESTIONS_START</span> …
+    <span class="mono">%%QUESTIONS_END</span> comments.
   </p>
 </div>
 <p><a href="{% url 'formatting:template_list' %}">← Back to templates</a></p>

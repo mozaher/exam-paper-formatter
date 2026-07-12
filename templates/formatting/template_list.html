@@ -20,10 +20,13 @@
     <tbody>
       {% for t in templates %}
       <tr>
-        <td><a href="{% url 'formatting:template_edit' t.pk %}">{{ t.name }}</a></td>
+        <td>
+          <a href="{% url 'formatting:template_edit' t.pk %}">{{ t.name }}</a>
+          {% if t.source_kind %}<span class="badge published">your {{ t.source_kind }}</span>{% endif %}
+        </td>
         <td>{{ t.institution_name }}</td>
-        <td>{{ t.get_font_display }}</td>
-        <td>{{ t.get_paper_size_display }}</td>
+        <td>{% if t.source_kind %}from document{% else %}{{ t.get_font_display }}{% endif %}</td>
+        <td>{% if t.source_kind %}—{% else %}{{ t.get_paper_size_display }}{% endif %}</td>
         <td>{{ t.papers.count }}</td>
         <td style="text-align:right;white-space:nowrap">
           <a class="btn ghost small" href="{% url 'formatting:template_preview_pdf' t.pk %}" target="_blank">Preview</a>

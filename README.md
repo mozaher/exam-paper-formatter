@@ -21,7 +21,7 @@ as "coming soon" and will be built in order, each with its own report.
 | **Item bank** | Author **MCQ** and **essay** questions, tag them with topic, difficulty, cognitive level (Bloom) and marks. Filter/search. Organize topics with one level of subtopics. |
 | **Portability** | Import and export the whole bank as **QTI 3.0** (an IMS content package). Your content is never locked in. |
 | **Paper formatting** | Assemble exam papers from bank questions into sections, set per-paper marks, and download two print-ready PDFs: the **question paper** (with ruled answer space for essays) and a staff-only **marking scheme** (correct answers + marking guides). |
-| **Templates by example** | Upload a Word/LaTeX/PDF sample of dummy questions in your house style. It's rendered in a locked-down sandbox, measured (fonts, margins, spacing, answer-space-per-mark), and turned into a reviewable formatting spec — confirmed with a visual side-by-side and plain-language adjustments, never raw settings. The upload itself is never stored; all future papers render deterministically from the confirmed spec. |
+| **Templates from your documents** | Upload the Word/LaTeX exam file your institution already uses, with dummy questions where real ones go. Word files are unconditionally stripped of macros/DDE/OLE; the cleaned file becomes the template and papers are **generated inside it** — fonts, margins, logos, headers and styles preserved exactly. The dummy-question area is located automatically (or you point it out in one click) and every generation replaces only that region, plus recognized fill-in fields (Subject/Date/Time). LaTeX templates compile in a locked-down sandbox: no shell escape, no network, hard resource limits. Word-based papers can also be downloaded as .docx. |
 
 ---
 
@@ -67,7 +67,7 @@ http://127.0.0.1:8000/signup/.
 python -m pytest -q
 ```
 
-You should see **60 passing tests**. The ones that back up the headline claims:
+You should see **73 passing tests**. The ones that back up the headline claims:
 
 - `core/tests/test_tenancy.py` — one org **cannot** read or edit another org's
   questions (returns 404, no data leak); plan gating and item limits are
@@ -85,18 +85,21 @@ You should see **60 passing tests**. The ones that back up the headline claims:
 - `formatting/tests/test_sandbox.py` — the compile sandbox: LaTeX shell-escape
   attempts leave no side effects, reads outside the job dir fail, runaway
   documents are killed by resource limits.
-- `formatting/tests/test_extraction.py` — renders a PDF with a known
-  formatting spec and asserts the extraction pipeline measures it back
-  (fonts, margins, line spacing, and the marks-to-answer-space rule).
-- `formatting/tests/test_template_flow.py` — ambiguous uploads go to visual
-  review; confident ones skip it; adjustments are bounded; confirming stores
-  only the spec and deletes the draft.
+- `formatting/tests/test_sanitize.py` — Word uploads lose macros, OLE/ActiveX
+  and DDE/INCLUDE fields unconditionally; external links are dropped.
+- `formatting/tests/test_inject_docx.py` / `test_inject_tex.py` — real
+  questions replace the dummy region while everything else stays
+  byte-identical; option label style, Word auto-numbering and the LaTeX
+  marks-to-space rule follow the uploaded document.
+- `formatting/tests/test_template_flow.py` — clear uploads go straight to
+  preview; ambiguous ones ask you to point out the questions area; confirming
+  stores the sanitized source as the template.
 
-To try template-by-example yourself: **Paper formatting → Templates →
-+ From sample file**, then upload `formatting/tests/fixtures/sample.tex` (or
-`sample.docx`, or any PDF of an exam in your house style). Compiling .tex
-needs `texlive-latex-base texlive-latex-recommended` installed; .docx needs
-`libreoffice-writer`; **.pdf samples need nothing extra**.
+To try it yourself: **Paper formatting → Templates → + From sample file**,
+then upload your institution's exam .docx (or
+`formatting/tests/fixtures/sample.tex`). Rendering .tex needs
+`texlive-latex-base texlive-latex-recommended`; .docx needs
+`libreoffice-writer` (the regular apt package, not the snap).
 
 ### Do the same round-trip from the command line
 

@@ -2,70 +2,34 @@
 {% block title %}Review template · Exam Platform{% endblock %}
 {% block content %}
 <h1>Does this look right?</h1>
-<p class="sub">Left: your uploaded sample. Right: a sample exam paper generated with the
-   formatting we extracted from it.</p>
+<p class="sub">This is <strong>your document</strong> with sample questions injected where
+   the dummy ones were. Real papers will be generated exactly the same way.</p>
 
 {% if draft.notes %}
 <div class="panel">
-  <strong>A few things were ambiguous:</strong>
-  <ul style="margin:8px 0 0 18px;">
+  <ul style="margin:0 0 0 18px;">
     {% for note in draft.notes %}<li>{{ note }}</li>{% endfor %}
   </ul>
 </div>
 {% endif %}
 
-<div class="row" style="align-items:stretch;gap:16px;">
-  <div style="flex:1;min-width:300px;">
-    <h2 style="margin-top:0">Your sample</h2>
-    <iframe src="{% url 'formatting:draft_original_pdf' draft.pk %}"
-            style="width:100%;height:520px;border:1px solid var(--line);border-radius:8px;"></iframe>
-  </div>
-  <div style="flex:1;min-width:300px;">
-    <h2 style="margin-top:0">Generated with extracted formatting</h2>
-    <iframe src="{% url 'formatting:draft_preview_pdf' draft.pk %}"
-            style="width:100%;height:520px;border:1px solid var(--line);border-radius:8px;"></iframe>
-  </div>
-</div>
-
-<div class="panel" style="margin-top:16px;">
-  <h2 style="margin-top:0">Not quite right? Adjust and it re-renders</h2>
-  <table>
-    <tbody>
-      {% for key, adj in adjustments.items %}
-      <tr>
-        <td style="width:220px;"><strong>{{ adj.label }}</strong></td>
-        <td>
-          <form method="post" action="{% url 'formatting:draft_adjust' draft.pk %}" style="display:inline">
-            {% csrf_token %}
-            <input type="hidden" name="control" value="{{ key }}">
-            <input type="hidden" name="direction" value="less">
-            <button class="btn ghost small" type="submit">{{ adj.less }}</button>
-          </form>
-          <form method="post" action="{% url 'formatting:draft_adjust' draft.pk %}" style="display:inline">
-            {% csrf_token %}
-            <input type="hidden" name="control" value="{{ key }}">
-            <input type="hidden" name="direction" value="more">
-            <button class="btn ghost small" type="submit">{{ adj.more }}</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<iframe src="{% url 'formatting:draft_preview_pdf' draft.pk %}"
+        style="width:100%;height:560px;border:1px solid var(--line);border-radius:8px;"></iframe>
 
 <div class="row" style="margin-top:16px;">
   <form method="post" action="{% url 'formatting:draft_confirm' draft.pk %}" style="margin:0">
     {% csrf_token %}
     <button class="btn" type="submit">✓ Looks right — save template</button>
   </form>
+  <a class="btn secondary" href="{% url 'formatting:template_region' draft.pk %}">Adjust the questions area</a>
   <form method="post" action="{% url 'formatting:draft_cancel' draft.pk %}" style="margin:0">
     {% csrf_token %}
     <button class="btn ghost" type="submit">Discard</button>
   </form>
 </div>
 <p class="help" style="margin-top:12px;">
-  Your uploaded file isn't kept — once you save (or discard), only the confirmed
-  formatting settings remain.
+  The stored template is your cleaned document (macros and embedded objects removed).
+  Only the questions area and recognized fill-in fields (Subject, Date, Time…) change
+  on each generated paper.
 </p>
 {% endblock %}

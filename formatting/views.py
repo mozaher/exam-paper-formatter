@@ -12,7 +12,7 @@ from django.views import View
 from core.access import ModuleRequiredMixin
 from itembank.models import Item, Topic
 
-from . import extract, labeling, pdf, preview, sandbox
+from . import ingest, pdf, preview, sandbox
 from . import spec as spec_module
 from .forms import PaperForm, PaperTemplateForm, SectionForm, TemplateSampleUploadForm
 from .models import Paper, PaperQuestion, PaperTemplate, Section, TemplateDraft
@@ -294,11 +294,58 @@ class PaperPdfView(FormattingMixin, View):
 
     def get(self, request, pk):
         paper = _get_paper(request, pk)
-        data = pdf.build_paper_pdf(paper, answers=self.answers)
+        template = paper.template
+        # Question papers from a source-file template are generated inside
+        # the institution's own document. The marking scheme (staff-only)
+        # always uses the built-in renderer.
+        if template is not None and template.source_kind and not self.answers:
+            try:
+                data = ingest.generate_paper_pdf(
+                    template.source_kind,
+                    bytes(template.source_file),
+                    template.source_detection,
+                    pdf.paper_to_data(paper),
+                )
+            except (ingest.IngestError, sandbox.CompileError) as exc:
+                messages.error(
+                    request,
+                    f"Could not generate the paper from template "
+                    f"“{template.name}”: {exc}",
+                )
+                return redirect("formatting:paper_detail", pk=paper.pk)
+        else:
+            data = pdf.build_paper_pdf(paper, answers=self.answers)
         suffix = "marking-scheme" if self.answers else "question-paper"
         filename = f"{paper.title[:60].strip().replace(' ', '-') or 'paper'}-{suffix}.pdf"
         response = HttpResponse(data, content_type="application/pdf")
         response["Content-Disposition"] = f'inline; filename="{filename}"'
+        return response
+
+
+class PaperDocxView(FormattingMixin, View):
+    """The injected .docx itself, for final touch-ups in Word."""
+
+    def get(self, request, pk):
+        paper = _get_paper(request, pk)
+        template = paper.template
+        if template is None or template.source_kind != "docx":
+            messages.error(request, "This paper's template is not a Word template.")
+            return redirect("formatting:paper_detail", pk=paper.pk)
+        try:
+            data = ingest.build_document(
+                "docx", bytes(template.source_file), template.source_detection,
+                pdf.paper_to_data(paper),
+            )
+        except ingest.IngestError as exc:
+            messages.error(request, str(exc))
+            return redirect("formatting:paper_detail", pk=paper.pk)
+        filename = f"{paper.title[:60].strip().replace(' ', '-') or 'paper'}.docx"
+        response = HttpResponse(
+            data,
+            content_type="application/vnd.openxmlformats-officedocument"
+            ".wordprocessingml.document",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 
 
@@ -364,39 +411,50 @@ class TemplateDeleteView(FormattingMixin, View):
 
 
 class TemplatePreviewPdfView(FormattingMixin, View):
-    """Sample paper rendered with a saved template's confirmed spec."""
+    """Sample paper rendered with a saved template."""
 
     def get(self, request, pk):
         template = get_object_or_404(PaperTemplate.objects.for_org(request.org), pk=pk)
-        data = preview.build_sample_pdf(
-            spec_module.spec_from_template(template),
-            institution_name=template.institution_name,
-            subtitle=template.subtitle,
-            footer_text=template.footer_text,
-        )
+        if template.source_kind:
+            try:
+                data = ingest.generate_paper_pdf(
+                    template.source_kind,
+                    bytes(template.source_file),
+                    template.source_detection,
+                    preview.sample_data(),
+                )
+            except (ingest.IngestError, sandbox.CompileError) as exc:
+                messages.error(request, f"Could not render the template preview: {exc}")
+                return redirect("formatting:template_list")
+        else:
+            data = preview.build_sample_pdf(
+                spec_module.spec_from_template(template),
+                institution_name=template.institution_name,
+                subtitle=template.subtitle,
+                footer_text=template.footer_text,
+            )
         return HttpResponse(data, content_type="application/pdf")
 
 
 # ---------------------------------------------------------------------------
-# Template-by-example: upload a sample -> extract -> visual review -> confirm.
-# The uploaded source file is processed in memory and never stored; only the
-# rendered PDF is kept on the draft for the side-by-side, and the draft is
-# deleted on confirm/cancel.
+# Template-by-example (in-place injection): upload -> sanitize -> locate the
+# dummy-question region -> visual preview of THEIR file with sample content
+# injected -> confirm. The sanitized file is stored as the template; papers
+# are generated by injecting content into it, preserving everything else.
 # ---------------------------------------------------------------------------
 
 def _get_draft(request, pk):
     return get_object_or_404(TemplateDraft.objects.for_org(request.org), pk=pk)
 
 
-def _create_template_from_spec(org, name, layout):
-    template = PaperTemplate(
-        org=org,
-        name=name[:120],
-        institution_name=org.name,
+def _build_draft_preview(draft):
+    """Inject sample content into the draft source and cache the PDF."""
+    pdf_bytes = ingest.generate_paper_pdf(
+        draft.source_kind, bytes(draft.source_file), draft.detection,
+        preview.sample_data(),
     )
-    spec_module.apply_spec_to_template(template, layout)
-    template.save()
-    return template
+    draft.rendered_pdf = pdf_bytes
+    draft.save(update_fields=["rendered_pdf"])
 
 
 class TemplateFromSampleView(FormattingMixin, View):
@@ -414,102 +472,120 @@ class TemplateFromSampleView(FormattingMixin, View):
                 request, "formatting/template_from_sample.html", {"form": form}
             )
         upload = form.cleaned_data["file"]
-        source = upload.read()  # in memory only; never written to storage
-
         try:
-            rendered = sandbox.render_upload(upload.name, source)
-        except sandbox.CompileError as exc:
-            form.add_error("file", str(exc))
-            return render(
-                request, "formatting/template_from_sample.html", {"form": form}
-            )
-        finally:
-            del source
-
-        try:
-            measurements = extract.extract_measurements(rendered)
-        except extract.ExtractError as exc:
+            result = ingest.ingest_upload(upload.name, upload.read())
+        except (ingest.IngestError, sandbox.CompileError) as exc:
             form.add_error("file", str(exc))
             return render(
                 request, "formatting/template_from_sample.html", {"form": form}
             )
 
-        labels = labeling.get_labeler().label(measurements)
-        layout, confidence, notes = spec_module.derive_spec(measurements, labels)
-        name = form.cleaned_data["name"].strip() or Path(upload.name).stem
-
-        if all(confidence.values()):
-            template = _create_template_from_spec(request.org, name, layout)
-            messages.success(
-                request,
-                f"Template “{template.name}” created from your sample. Every "
-                "formatting value was extracted unambiguously, so the review "
-                "step was skipped — use Preview to double-check the result.",
-            )
-            return redirect("formatting:template_list")
-
-        # Something was ambiguous: keep a draft for visual review.
         TemplateDraft.objects.for_org(request.org).filter(
             created_at__lt=timezone.now() - timedelta(days=7)
         ).delete()
         draft = TemplateDraft.objects.create(
             org=request.org,
-            name=name,
+            name=(form.cleaned_data["name"].strip() or Path(upload.name).stem)[:120],
             source_filename=upload.name[:255],
-            rendered_pdf=rendered,
-            spec=layout,
-            confidence=confidence,
-            notes=notes,
+            source_kind=result.kind,
+            source_file=result.sanitized,
+            detection=result.detection_json,
+            notes=[result.reason] if result.reason else [],
             created_by=request.user,
         )
+        if result.ambiguous:
+            return redirect("formatting:template_region", pk=draft.pk)
+        try:
+            _build_draft_preview(draft)
+        except (ingest.IngestError, sandbox.CompileError) as exc:
+            messages.error(request, f"Could not generate a preview: {exc}")
+            return redirect("formatting:template_region", pk=draft.pk)
         return redirect("formatting:template_review", pk=draft.pk)
+
+
+class TemplateRegionView(FormattingMixin, View):
+    """Staff point out where the questions area starts and ends."""
+
+    def get(self, request, pk):
+        draft = _get_draft(request, pk)
+        return self._render(request, draft)
+
+    def post(self, request, pk):
+        draft = _get_draft(request, pk)
+        try:
+            start = int(request.POST.get("start", "-1"))
+            end = int(request.POST.get("end", "-1"))
+        except ValueError:
+            start = end = -1
+        blocks = draft.detection.get("blocks", [])
+        if not (0 <= start <= end < len(blocks)):
+            messages.error(
+                request, "Pick where the questions start and end (start must come first)."
+            )
+            return self._render(request, draft)
+        draft.detection = ingest.redetect(
+            draft.source_kind, bytes(draft.source_file), (start, end)
+        )
+        draft.notes = ["Question region confirmed by you."]
+        draft.save(update_fields=["detection", "notes"])
+        try:
+            _build_draft_preview(draft)
+        except (ingest.IngestError, sandbox.CompileError) as exc:
+            messages.error(
+                request,
+                f"Could not generate a preview with that region: {exc}",
+            )
+            return self._render(request, draft)
+        return redirect("formatting:template_review", pk=draft.pk)
+
+    def _render(self, request, draft):
+        blocks = [
+            b for b in draft.detection.get("blocks", [])
+            if b.get("text") or b.get("kind") in ("table", "blank")
+        ]
+        return render(
+            request,
+            "formatting/template_region.html",
+            {
+                "draft": draft,
+                "blocks": blocks,
+                "suggest_start": draft.detection.get("start", -1),
+                "suggest_end": draft.detection.get("end", -1),
+            },
+        )
 
 
 class TemplateReviewView(FormattingMixin, View):
     def get(self, request, pk):
         draft = _get_draft(request, pk)
-        return render(
-            request,
-            "formatting/template_review.html",
-            {"draft": draft, "adjustments": spec_module.ADJUSTMENTS},
-        )
-
-
-class DraftOriginalPdfView(FormattingMixin, View):
-    def get(self, request, pk):
-        draft = _get_draft(request, pk)
-        return HttpResponse(bytes(draft.rendered_pdf), content_type="application/pdf")
+        if not bytes(draft.rendered_pdf):
+            return redirect("formatting:template_region", pk=draft.pk)
+        return render(request, "formatting/template_review.html", {"draft": draft})
 
 
 class DraftPreviewPdfView(FormattingMixin, View):
     def get(self, request, pk):
         draft = _get_draft(request, pk)
-        data = preview.build_sample_pdf(
-            draft.spec, institution_name=request.org.name
-        )
-        return HttpResponse(data, content_type="application/pdf")
-
-
-class DraftAdjustView(FormattingMixin, View):
-    def post(self, request, pk):
-        draft = _get_draft(request, pk)
-        control = request.POST.get("control", "")
-        direction = request.POST.get("direction", "")
-        if control in spec_module.ADJUSTMENTS and direction in ("less", "more"):
-            draft.spec = spec_module.apply_adjustment(draft.spec, control, direction)
-            draft.save(update_fields=["spec"])
-        return redirect("formatting:template_review", pk=draft.pk)
+        return HttpResponse(bytes(draft.rendered_pdf), content_type="application/pdf")
 
 
 class DraftConfirmView(FormattingMixin, View):
     def post(self, request, pk):
         draft = _get_draft(request, pk)
-        template = _create_template_from_spec(request.org, draft.name, draft.spec)
+        template = PaperTemplate.objects.create(
+            org=request.org,
+            name=draft.name,
+            institution_name=request.org.name,
+            source_kind=draft.source_kind,
+            source_file=bytes(draft.source_file),
+            source_filename=draft.source_filename,
+            source_detection=draft.detection,
+        )
         draft.delete()
         messages.success(
             request,
-            f"Template “{template.name}” saved. New papers can use it right away; "
-            "edit it to set the institution name and footer text.",
+            f"Template “{template.name}” saved. Papers using it are generated "
+            "inside your own document — only the questions area changes.",
         )
         return redirect("formatting:template_list")
 

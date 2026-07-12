@@ -15,6 +15,9 @@
   <div class="row">
     <a class="btn" href="{% url 'formatting:paper_pdf' paper.pk %}" target="_blank">Question paper PDF</a>
     <a class="btn secondary" href="{% url 'formatting:paper_marking_pdf' paper.pk %}" target="_blank">Marking scheme PDF</a>
+    {% if paper.template.source_kind == 'docx' %}
+      <a class="btn secondary" href="{% url 'formatting:paper_docx' paper.pk %}">Word (.docx)</a>
+    {% endif %}
     <a class="btn ghost" href="{% url 'formatting:paper_edit' paper.pk %}">Edit details</a>
   </div>
 </div>

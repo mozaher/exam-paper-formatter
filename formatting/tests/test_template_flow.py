@@ -1,159 +1,148 @@
-"""The template-by-example flow: upload -> review -> adjust -> confirm.
+"""The template-by-example flow (in-place injection model).
 
-Uses PDF uploads (built with our own renderer) so no external compilers are
-needed; the sandbox itself is covered in test_sandbox.py.
+Rendering is monkeypatched to avoid needing LibreOffice in view tests; the
+real converters are covered in test_sandbox.py / test_inject_tex.py.
 """
-from decimal import Decimal
+import io
+import zipfile
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from core.tests.factories import make_org, make_user
 from formatting import views as formatting_views
-from formatting.models import PaperTemplate, TemplateDraft
-from formatting.pdf import PaperData, QuestionData, SectionData, build_pdf
+from formatting.models import Paper, PaperTemplate, Section, TemplateDraft
+from .docx_factory import build_docx, para, standard_exam_docx
 
 pytestmark = pytest.mark.django_db
 
 
-def _login(client, slug="tpl", email="t@tpl.test"):
+@pytest.fixture(autouse=True)
+def fake_pdf_rendering(monkeypatch):
+    """Injection stays real; only PDF conversion is faked for speed."""
+    monkeypatch.setattr(
+        formatting_views.ingest, "render_pdf", lambda kind, doc: b"%PDF-fake " + kind.encode()
+    )
+
+
+def _login(client, slug="inj", email="t@inj.test"):
     org = make_org(slug.title(), slug)
     make_user(email, org)
     client.login(email=email, password="testpass123")
     return org
 
 
-def _ambiguous_sample_pdf():
-    """A sample with text but no marks indicators -> answer rule is ambiguous."""
-    data = PaperData(title="Plain Sample")
-    data.sections = [
-        SectionData(
-            title="Part One",
-            questions=[
-                QuestionData(
-                    item_type="essay",
-                    body="A question with no marks shown anywhere in the document, "
-                    "written long enough to wrap across several rendered lines "
-                    "so spacing itself is measurable.",
-                    marks=Decimal(1),
-                )
-            ],
-        )
-    ]
-    d = dict(marks="")  # noqa: F841  (clarity: no [n marks] text in output)
-    pdf_bytes = build_pdf(data, layout=None, answers=True)  # answers mode: no answer lines
-    return pdf_bytes
-
-
-def _upload(client, pdf_bytes, name=""):
-    from django.core.files.uploadedfile import SimpleUploadedFile
-
+def _upload(client, data=None, name="Dept template", filename="dept.docx"):
     return client.post(
         reverse("formatting:template_from_sample"),
         {
             "name": name,
-            "file": SimpleUploadedFile("dept-style.pdf", pdf_bytes, "application/pdf"),
+            "file": SimpleUploadedFile(
+                filename, data or standard_exam_docx(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
         },
     )
 
 
-def test_ambiguous_upload_goes_to_review_not_straight_to_template(client):
+def test_clear_upload_goes_straight_to_review(client):
     org = _login(client)
-    resp = _upload(client, _ambiguous_sample_pdf(), name="Department style")
+    resp = _upload(client)
     draft = TemplateDraft.objects.for_org(org).get()
     assert resp.status_code == 302
     assert resp.url == reverse("formatting:template_review", args=[draft.pk])
-    assert PaperTemplate.objects.for_org(org).count() == 0  # nothing saved yet
-    # The draft keeps only the rendered PDF — the upload itself is gone.
-    assert bytes(draft.rendered_pdf).startswith(b"%PDF-")
-    assert draft.notes  # plain-language ambiguity notes exist
+    assert not draft.detection["ambiguous"]
+    assert bytes(draft.rendered_pdf).startswith(b"%PDF-")   # preview cached
+    # The stored source is the SANITIZED file, still a valid docx zip.
+    assert zipfile.is_zipfile(io.BytesIO(bytes(draft.source_file)))
 
 
-def test_review_page_is_visual_and_plain_language(client):
+def test_ambiguous_upload_asks_for_region(client):
     org = _login(client)
-    _upload(client, _ambiguous_sample_pdf())
+    doc = build_docx(para("Cover text") + para("1. Single question?") + para(""))
+    resp = _upload(client, data=doc)
     draft = TemplateDraft.objects.for_org(org).get()
-    resp = client.get(reverse("formatting:template_review", args=[draft.pk]))
-    content = resp.content.decode()
-    assert "Does this look right?" in content
-    assert "Looks right" in content
-    # Both sides of the comparison are embedded.
-    assert reverse("formatting:draft_original_pdf", args=[draft.pk]) in content
-    assert reverse("formatting:draft_preview_pdf", args=[draft.pk]) in content
-    # Raw spec values / JSON are never shown.
-    assert "answer_per_mark_mm" not in content
-    assert "font_size_pt" not in content
+    assert resp.url == reverse("formatting:template_region", args=[draft.pk])
 
+    # The region page lists document lines to point at, not raw data.
+    page = client.get(resp.url)
+    assert b"Where are the dummy questions?" in page.content
+    assert b"Single question?" in page.content
 
-def test_adjust_control_changes_spec_and_rerenders(client):
-    org = _login(client)
-    _upload(client, _ambiguous_sample_pdf())
-    draft = TemplateDraft.objects.for_org(org).get()
-    before = draft.spec["margin_left_mm"]
-    client.post(
-        reverse("formatting:draft_adjust", args=[draft.pk]),
-        {"control": "margins", "direction": "more"},
-    )
+    # Staff point out the area -> preview -> review.
+    resp2 = client.post(resp.url, {"start": 1, "end": 2})
     draft.refresh_from_db()
-    assert draft.spec["margin_left_mm"] == pytest.approx(before + 3.0)
-    # Preview endpoint renders from the updated spec.
-    resp = client.get(reverse("formatting:draft_preview_pdf", args=[draft.pk]))
-    assert resp.status_code == 200
-    assert resp.content.startswith(b"%PDF-")
+    assert resp2.url == reverse("formatting:template_review", args=[draft.pk])
+    assert draft.detection["start"] == 1 and draft.detection["end"] == 2
+    assert not draft.detection["ambiguous"]
 
 
-def test_confirm_saves_spec_and_deletes_draft(client):
+def test_confirm_stores_source_template_and_deletes_draft(client):
     org = _login(client)
-    _upload(client, _ambiguous_sample_pdf(), name="Confirmed style")
+    _upload(client)
     draft = TemplateDraft.objects.for_org(org).get()
-    expected_margin = draft.spec["margin_left_mm"]
-    resp = client.post(reverse("formatting:draft_confirm", args=[draft.pk]))
-    assert resp.status_code == 302
+    client.post(reverse("formatting:draft_confirm", args=[draft.pk]))
+
     template = PaperTemplate.objects.for_org(org).get()
-    assert template.name == "Confirmed style"
-    assert float(template.margin_left_mm) == pytest.approx(expected_margin, abs=0.1)
-    # Draft (and with it the rendered upload) is gone.
+    assert template.source_kind == "docx"
+    assert template.source_detection["start"] >= 0
+    assert bytes(template.source_file)  # sanitized source stored
     assert TemplateDraft.objects.count() == 0
 
 
-def test_cancel_discards_everything(client):
+def test_cancel_discards_draft(client):
     org = _login(client)
-    _upload(client, _ambiguous_sample_pdf())
+    _upload(client)
     draft = TemplateDraft.objects.for_org(org).get()
     client.post(reverse("formatting:draft_cancel", args=[draft.pk]))
     assert TemplateDraft.objects.count() == 0
     assert PaperTemplate.objects.for_org(org).count() == 0
 
 
-def test_high_confidence_skips_review(client, monkeypatch):
+def test_paper_pdf_generated_inside_source_template(client):
     org = _login(client)
+    _upload(client)
+    draft = TemplateDraft.objects.for_org(org).get()
+    client.post(reverse("formatting:draft_confirm", args=[draft.pk]))
+    template = PaperTemplate.objects.for_org(org).get()
 
-    def confident_derive(measurements, labels):
-        from formatting import spec as spec_module
+    paper = Paper.objects.create(org=org, title="Real Paper", template=template)
+    Section.objects.create(paper=paper, title="Section A")
+    resp = client.get(reverse("formatting:paper_pdf", args=[paper.pk]))
+    assert resp.status_code == 200
+    assert resp.content.startswith(b"%PDF-fake docx")  # injected route used
 
-        spec = spec_module.default_spec()
-        return spec, {name: True for name in spec_module.CONFIDENCE_FIELDS}, []
+    # Marking scheme always uses the built-in renderer (real PDF bytes).
+    resp = client.get(reverse("formatting:paper_marking_pdf", args=[paper.pk]))
+    assert resp.content.startswith(b"%PDF-1")
 
-    monkeypatch.setattr(formatting_views.spec_module, "derive_spec", confident_derive)
-    resp = _upload(client, _ambiguous_sample_pdf(), name="Instant")
-    assert resp.status_code == 302
-    assert resp.url == reverse("formatting:template_list")
-    assert PaperTemplate.objects.for_org(org).filter(name="Instant").exists()
-    assert TemplateDraft.objects.count() == 0  # no review needed, no draft kept
+
+def test_paper_docx_download(client):
+    org = _login(client)
+    _upload(client)
+    draft = TemplateDraft.objects.for_org(org).get()
+    client.post(reverse("formatting:draft_confirm", args=[draft.pk]))
+    template = PaperTemplate.objects.for_org(org).get()
+    paper = Paper.objects.create(org=org, title="P", template=template)
+    Section.objects.create(paper=paper, title="A")
+
+    resp = client.get(reverse("formatting:paper_docx", args=[paper.pk]))
+    assert resp.status_code == 200
+    assert "wordprocessingml" in resp["Content-Type"]
+    assert zipfile.is_zipfile(io.BytesIO(resp.content))  # real injected docx
 
 
 def test_drafts_are_tenant_isolated(client):
-    org_b = make_org("B", "b-tpl")
-    other = make_user("b@tpl.test", org_b)
+    org_b = make_org("B", "b-inj")
+    other = make_user("b@inj.test", org_b)
     foreign = TemplateDraft.objects.create(
-        org=org_b, name="theirs", rendered_pdf=b"%PDF-1.4", spec={}, created_by=other
+        org=org_b, name="theirs", source_kind="docx",
+        source_file=standard_exam_docx(), detection={}, rendered_pdf=b"%PDF-x",
+        created_by=other,
     )
-    _login(client)  # org A
-    for url_name in (
-        "template_review",
-        "draft_original_pdf",
-        "draft_preview_pdf",
-    ):
+    _login(client)
+    for url_name in ("template_review", "template_region", "draft_preview_pdf"):
         assert client.get(
             reverse(f"formatting:{url_name}", args=[foreign.pk])
         ).status_code == 404
@@ -162,24 +151,23 @@ def test_drafts_are_tenant_isolated(client):
     ).status_code == 404
 
 
-def test_saved_template_preview_endpoint(client):
-    org = _login(client)
-    template = PaperTemplate.objects.create(
-        org=org, name="T", institution_name="Preview High"
-    )
-    resp = client.get(reverse("formatting:template_preview_pdf", args=[template.pk]))
-    assert resp.status_code == 200
-    assert resp.content.startswith(b"%PDF-")
-
-
-def test_invalid_upload_shows_friendly_error(client):
+def test_invalid_docx_shows_friendly_error(client):
     _login(client)
-    from django.core.files.uploadedfile import SimpleUploadedFile
-
-    resp = client.post(
-        reverse("formatting:template_from_sample"),
-        {"name": "", "file": SimpleUploadedFile("junk.pdf", b"not a pdf", "application/pdf")},
-    )
+    resp = _upload(client, data=b"MZ not a docx at all")
     assert resp.status_code == 200
-    assert b"does not look like a valid PDF" in resp.content
+    assert b"Not a valid .docx" in resp.content
     assert TemplateDraft.objects.count() == 0
+
+
+def test_macros_are_stripped_on_ingest(client):
+    org = _login(client)
+    body = (
+        para("Header")
+        + para("1. Q one?", numpr=True) + para("A) x") + para("B) y")
+        + para("2. Q two?", numpr=True) + para("A) x") + para("B) y")
+    )
+    doc = build_docx(body, extra_entries={"word/vbaProject.bin": b"MACRO"})
+    _upload(client, data=doc)
+    draft = TemplateDraft.objects.for_org(org).get()
+    names = zipfile.ZipFile(io.BytesIO(bytes(draft.source_file))).namelist()
+    assert "word/vbaProject.bin" not in names

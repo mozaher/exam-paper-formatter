@@ -8,7 +8,8 @@ from decimal import Decimal
 
 from .pdf import PaperData, QuestionData, SectionData, build_pdf
 
-def _sample_data(institution_name="", subtitle="", footer_text="") -> PaperData:
+
+def sample_data(institution_name="", subtitle="", footer_text="") -> PaperData:
     data = PaperData(
         title="Sample Examination Paper",
         course_code="SAMPLE-101",
@@ -68,7 +69,7 @@ def _sample_data(institution_name="", subtitle="", footer_text="") -> PaperData:
 
 def build_sample_pdf(layout: dict, *, institution_name="", subtitle="", footer_text="") -> bytes:
     layout = layout or {}
-    data = _sample_data(institution_name, subtitle, footer_text)
+    data = sample_data(institution_name, subtitle, footer_text)
     # Cover slots proposed by extraction ride in the spec; show them so the
     # side-by-side reflects what would actually be saved.
     data.cover_heading = layout.get("cover_heading", "")
