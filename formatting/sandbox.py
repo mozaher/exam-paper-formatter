@@ -29,13 +29,20 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-# Hard limits (same for every compiler).
+# Hard limits. LibreOffice gets a longer wall clock (cold-start profile
+# creation on slower machines) and more address space (it maps large font/
+# image caches; RLIMIT_AS counts virtual mappings, not just heap).
 WALL_TIMEOUT_SECONDS = 40
-CPU_SECONDS = 25
-MEMORY_BYTES = 768 * 1024 * 1024
+SOFFICE_WALL_TIMEOUT_SECONDS = 90
+CPU_SECONDS = 30
+MEMORY_BYTES = 2 * 1024 * 1024 * 1024
 OUTPUT_FILE_BYTES = 25 * 1024 * 1024
-MAX_PROCESSES = 64  # LibreOffice needs threads; TeX needs ~1.
 MAX_SOURCE_BYTES = 5 * 1024 * 1024
+# NOTE: deliberately no RLIMIT_NPROC. That limit counts ALL processes owned
+# by the invoking UID — on a developer desktop with hundreds of user
+# processes it makes the compiler's first fork() fail with EAGAIN. Runaway
+# process trees are contained instead by the wall-clock kill of the whole
+# process group plus the CPU and memory limits.
 
 
 class CompileError(Exception):
@@ -51,9 +58,7 @@ def _limits():
     resource.setrlimit(resource.RLIMIT_CPU, (CPU_SECONDS, CPU_SECONDS))
     resource.setrlimit(resource.RLIMIT_AS, (MEMORY_BYTES, MEMORY_BYTES))
     resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_FILE_BYTES, OUTPUT_FILE_BYTES))
-    resource.setrlimit(resource.RLIMIT_NPROC, (MAX_PROCESSES, MAX_PROCESSES))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    os.setsid()  # own process group so the whole tree can be killed on timeout
 
 
 def _netns_prefix():
@@ -67,7 +72,7 @@ def _netns_prefix():
     return [unshare, "--net"] if probe.returncode == 0 else []
 
 
-def run_sandboxed(argv, cwd, extra_env=None):
+def run_sandboxed(argv, cwd, extra_env=None, timeout=WALL_TIMEOUT_SECONDS):
     env = {
         "PATH": "/usr/bin:/bin:/usr/local/bin",
         "HOME": str(cwd),
@@ -75,21 +80,30 @@ def run_sandboxed(argv, cwd, extra_env=None):
         "TMPDIR": str(cwd),
     }
     env.update(extra_env or {})
+    proc = subprocess.Popen(
+        _netns_prefix() + argv,
+        cwd=str(cwd),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        preexec_fn=_limits,
+        start_new_session=True,  # own process group: the whole tree dies below
+        shell=False,
+    )
     try:
-        proc = subprocess.run(
-            _netns_prefix() + argv,
-            cwd=str(cwd),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            preexec_fn=_limits,
-            timeout=WALL_TIMEOUT_SECONDS,
-            shell=False,
-        )
+        output, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as exc:
+        # Kill the entire group — converters like LibreOffice fork helpers
+        # that would outlive a plain kill of the direct child.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
         raise CompileError(
-            f"Compilation exceeded the {WALL_TIMEOUT_SECONDS}s time limit."
+            f"Compilation exceeded the {timeout}s time limit."
         ) from exc
+    proc.output = output
     return proc
 
 
@@ -149,6 +163,12 @@ def convert_docx(source: bytes) -> bytes:
             "Word conversion is not installed on this server (LibreOffice not "
             "found). Upload a .tex or PDF sample instead."
         )
+    if "/snap/" in soffice:
+        raise CompilerUnavailable(
+            "LibreOffice is installed as a snap, which cannot run inside the "
+            "compile sandbox. Install the regular package (apt install "
+            "libreoffice-writer) or upload a PDF sample instead."
+        )
     if len(source) > MAX_SOURCE_BYTES:
         raise CompileError("Source file too large (5 MB limit).")
 
@@ -167,12 +187,14 @@ def convert_docx(source: bytes) -> bytes:
             str(jobdir),
             str(jobdir / "sample.docx"),
         ]
-        proc = run_sandboxed(argv, jobdir)
+        proc = run_sandboxed(argv, jobdir, timeout=SOFFICE_WALL_TIMEOUT_SECONDS)
         pdf_path = jobdir / "sample.pdf"
         if proc.returncode != 0 or not pdf_path.exists():
+            detail = (proc.output or b"").decode(errors="replace").strip()
+            detail = f" Converter said: {detail[-300:]}" if detail else ""
             raise CompileError(
                 "The Word file could not be converted. Make sure it opens "
-                "cleanly in Word/LibreOffice, or upload a PDF sample instead."
+                f"cleanly in Word/LibreOffice, or upload a PDF sample instead.{detail}"
             )
         return pdf_path.read_bytes()
 
