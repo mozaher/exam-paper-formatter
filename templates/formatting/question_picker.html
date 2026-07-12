@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Add questions · Exam Platform{% endblock %}
+{% block content %}
+<h1>Add questions to {{ section.title }}</h1>
+<p class="sub">Paper: {{ paper.title }}. Questions already on this paper are hidden.</p>
+
+<div class="panel">
+  <form method="get" class="filters">
+    <div>
+      <label>Search</label>
+      <input type="text" name="q" value="{{ filters.q }}" placeholder="Title or text">
+    </div>
+    <div>
+      <label>Topic</label>
+      <select name="topic">
+        <option value="">All</option>
+        {% for t in topics %}<option value="{{ t.id }}" {% if filters.topic == t.id|stringformat:'s' %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Type</label>
+      <select name="item_type">
+        <option value="">All</option>
+        <option value="mcq" {% if filters.item_type == 'mcq' %}selected{% endif %}>Multiple choice</option>
+        <option value="essay" {% if filters.item_type == 'essay' %}selected{% endif %}>Essay</option>
+      </select>
+    </div>
+    <div>
+      <label>Difficulty</label>
+      <select name="difficulty">
+        <option value="">All</option>
+        {% for v, label in difficulties %}<option value="{{ v }}" {% if filters.difficulty == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><button class="btn secondary" type="submit">Filter</button></div>
+  </form>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="panel">
+    {% if items %}
+    <table>
+      <thead><tr><th style="width:36px"></th><th>Question</th><th>Type</th><th>Topic</th><th>Difficulty</th><th>Marks</th></tr></thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td><input type="checkbox" name="item_ids" value="{{ item.id }}"></td>
+          <td>{{ item.title }}<div class="muted" style="font-size:13px">{{ item.body|truncatechars:90 }}</div></td>
+          <td><span class="badge {{ item.item_type }}">{{ item.get_item_type_display }}</span></td>
+          <td>{{ item.topic|default:"—" }}</td>
+          <td><span class="badge {{ item.difficulty }}">{{ item.get_difficulty_display }}</span></td>
+          <td>{{ item.marks|floatformat:"-2" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No matching questions available (they may all be on this paper already).</div>
+    {% endif %}
+  </div>
+  <div class="row">
+    <button class="btn" type="submit">Add selected to {{ section.title }}</button>
+    <a class="btn ghost" href="{% url 'formatting:paper_detail' paper.pk %}">Back to paper</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}New template{% else %}Edit template{% endif %} · Exam Platform{% endblock %}
+{% block content %}
+<h1>{% if is_new %}New paper template{% else %}Edit template{% endif %}</h1>
+<p class="sub">A fixed set of named slots — no file uploads, nothing executable. The PDF
+   builder pours these values into a standard layout.</p>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="panel">
+    {% for field in form.visible_fields %}
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+      {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    {% endfor %}
+  </div>
+  <div class="row">
+    <button class="btn" type="submit">Save template</button>
+    <a class="btn ghost" href="{% url 'formatting:template_list' %}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

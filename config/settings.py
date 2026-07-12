@@ -37,9 +37,11 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Platform core: tenancy, accounts, billing, module registry.
     "core",
-    # Feature modules. Each is a self-contained Django app that depends on
-    # core but never on a sibling module.
+    # Feature modules. Each is a self-contained Django app. Modules may depend
+    # on core and read the item bank (the content spine), but never import a
+    # sibling feature module.
     "itembank",
+    "formatting",
 ]
 
 MIDDLEWARE = [

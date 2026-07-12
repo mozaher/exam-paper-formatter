@@ -145,11 +145,48 @@ class Command(BaseCommand):
             created_by=user,
         )
 
+        from formatting.models import Paper, PaperQuestion, PaperTemplate, Section
+
+        template = PaperTemplate.objects.create(
+            org=org,
+            name="Demo High School — standard",
+            institution_name="Demo High School",
+            subtitle="Science Department",
+            footer_text="Demo High School · Midterm examinations",
+            default_instructions=(
+                "Answer ALL questions.\n\n"
+                "Write your name and candidate number on every answer sheet. "
+                "Calculators are not permitted."
+            ),
+            font="serif",
+            paper_size="A4",
+        )
+        paper = Paper.objects.create(
+            org=org,
+            template=template,
+            title="Sample Midterm Examination",
+            course_code="SCI-101",
+            duration_minutes=90,
+            created_by=user,
+        )
+        section_a = Section.objects.create(
+            paper=paper, title="Section A — Multiple choice", order=0,
+            instructions="Choose the single best answer for each question.",
+        )
+        section_b = Section.objects.create(
+            paper=paper, title="Section B — Structured questions", order=1,
+        )
+        for i, item in enumerate([mcq, mcq2]):
+            PaperQuestion.objects.create(section=section_a, item=item, order=i)
+        essay = Item.objects.get(org=org, title="Cellular respiration overview")
+        PaperQuestion.objects.create(section=section_b, item=essay, order=0)
+
         self.stdout.write(
             self.style.SUCCESS(
                 "Seeded demo org 'Demo High School'.\n"
                 "  Login: teacher@demo.test / demopass123\n"
                 "  Plan:  Pro (item bank + formatting + paper MCQ + online exam)\n"
-                "  Items: 2 MCQ + 1 essay across Biology and Mathematics topics"
+                "  Items: 2 MCQ + 1 essay across Biology and Mathematics topics\n"
+                "  Paper: 'Sample Midterm Examination' ready to download as PDF"
             )
         )

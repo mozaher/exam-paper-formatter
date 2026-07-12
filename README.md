@@ -4,10 +4,10 @@ A multi-tenant web app that helps teachers build and run exams. It is a shared
 **core** (accounts, organizations/tenancy, billing, a module registry) plus
 feature **modules** that plug into it.
 
-**Build status — Module 1 of 5 complete:** platform core + the **Item bank**
-module. The remaining modules (Essay/paper formatting, Paper MCQ via AMC, Online
-exam, AI blueprint generator) are scaffolded as "coming soon" and will be built
-in order, each with its own report.
+**Build status — Modules 1–2 of 5 complete:** platform core + the **Item bank**
+module, plus the **Paper formatting** module (exam-paper PDFs). The remaining
+modules (Paper MCQ via AMC, Online exam, AI blueprint generator) are scaffolded
+as "coming soon" and will be built in order, each with its own report.
 
 ---
 
@@ -20,6 +20,7 @@ in order, each with its own report.
 | **Billing** | Plans (Free / Pro / Institution) gate which modules and limits an org gets. A "manual" billing provider lets admins switch plans instantly; a real payment provider (Stripe) plugs in behind the same interface. |
 | **Item bank** | Author **MCQ** and **essay** questions, tag them with topic, difficulty, cognitive level (Bloom) and marks. Filter/search. Organize topics with one level of subtopics. |
 | **Portability** | Import and export the whole bank as **QTI 3.0** (an IMS content package). Your content is never locked in. |
+| **Paper formatting** | Assemble exam papers from bank questions into sections, set per-paper marks, and download two print-ready PDFs: the **question paper** (with ruled answer space for essays) and a staff-only **marking scheme** (correct answers + marking guides). Institutional branding comes from templates that are a fixed set of named slots — never uploaded LaTeX/Word files. |
 
 ---
 
@@ -44,8 +45,10 @@ Then open **http://127.0.0.1:8000/** and sign in with the demo account:
 - **Email:** `teacher@demo.test`
 - **Password:** `demopass123`
 
-You'll land on the dashboard. Click **Item bank** to see three seeded questions
-(two MCQ, one essay) across Biology and Mathematics topics. Try:
+You'll land on the dashboard. Click **Paper formatting → Sample Midterm
+Examination** and hit **Question paper PDF** / **Marking scheme PDF** to see the
+two print-ready PDFs built from the seeded questions. Click **Item bank** to see
+the three seeded questions (two MCQ, one essay). Try:
 
 - **+ MCQ / + Essay** — author a new question.
 - **Export** — download the bank as a QTI 3.0 `.zip`.
@@ -63,7 +66,7 @@ http://127.0.0.1:8000/signup/.
 python -m pytest -q
 ```
 
-You should see **20 passing tests**. The ones that back up the headline claims:
+You should see **35 passing tests**. The ones that back up the headline claims:
 
 - `core/tests/test_tenancy.py` — one org **cannot** read or edit another org's
   questions (returns 404, no data leak); plan gating and item limits are
@@ -73,6 +76,11 @@ You should see **20 passing tests**. The ones that back up the headline claims:
   an external entity (XXE/SSRF attempt) is **rejected**, not processed.
 - `core/tests/test_accounts.py` — signup provisions a tenant; invite links work
   and can't be reused.
+- `formatting/tests/test_pdf.py` — the question paper **never** contains model
+  answers; the marking scheme does; hostile markup in question text can't break
+  (or script) the PDF builder.
+- `formatting/tests/test_papers.py` — papers, sections, marks overrides, and
+  cross-tenant isolation for papers and question-picking.
 
 ### Do the same round-trip from the command line
 
@@ -108,6 +116,7 @@ on automatically. `python manage.py check --deploy` reports no issues.
 config/        Django project (settings, urls, wsgi)
 core/          Tenancy, accounts, billing, the module registry — the shared spine
 itembank/      Module 1: the question bank + QTI 3.0 import/export
+formatting/    Module 2: exam-paper assembly + deterministic PDF builder
 templates/     Server-rendered pages
 static/        One stylesheet
 docs/          Architecture & assumptions, and the per-module reports

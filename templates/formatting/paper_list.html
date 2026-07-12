@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Papers · Exam Platform{% endblock %}
+{% block content %}
+<div class="row spread">
+  <div>
+    <h1>Exam papers</h1>
+    <p class="sub">Assemble papers from your item bank and download print-ready PDFs.</p>
+  </div>
+  <div class="row">
+    <a class="btn" href="{% url 'formatting:paper_create' %}">+ New paper</a>
+    <a class="btn secondary" href="{% url 'formatting:template_list' %}">Templates</a>
+  </div>
+</div>
+
+<div class="panel">
+  {% if papers %}
+  <table>
+    <thead><tr><th>Title</th><th>Course</th><th>Date</th><th>Questions</th><th>Total marks</th><th>Template</th></tr></thead>
+    <tbody>
+      {% for paper in papers %}
+      <tr>
+        <td><a href="{% url 'formatting:paper_detail' paper.pk %}">{{ paper.title }}</a></td>
+        <td>{{ paper.course_code|default:"—" }}</td>
+        <td>{{ paper.exam_date|date:"j M Y"|default:"—" }}</td>
+        <td>{{ paper.question_count }}</td>
+        <td>{{ paper.total_marks|floatformat:"-2" }}</td>
+        <td>{{ paper.template|default:"Built-in default" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <p>No papers yet. Create one and pull in questions from your item bank.</p>
+    <a class="btn" href="{% url 'formatting:paper_create' %}">+ New paper</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

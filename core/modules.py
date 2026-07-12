@@ -40,7 +40,6 @@ def get_module(code: str) -> Optional[Module]:
 # Modules planned but not yet built; shown on the dashboard as "coming soon"
 # so the product shape is visible from day one.
 PLANNED_MODULES = [
-    ("formatting", "Exam paper formatting", "Assemble a formatted exam paper PDF from bank content and an institutional template."),
     ("paper_mcq", "Paper MCQ (OMR)", "Print randomized MCQ sheets, scan them back, auto-grade via Auto Multiple Choice."),
     ("online_exam", "Online exam", "Browser-delivered, timed, auto-graded exams."),
     ("blueprint", "AI blueprint generator", "Propose a table of specification from a syllabus and fill it from the bank."),

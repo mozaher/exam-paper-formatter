@@ -31,9 +31,11 @@ core (shared spine)
  ├─ billing:   Plan, Subscription, provider interface, feature gating
  └─ registry:  core/modules.py — modules self-register; nav/dashboard read it
 
-modules (each a Django app; depends on core, never on a sibling)
- └─ itembank   ← built
-    formatting, paper_mcq, online_exam, blueprint  ← planned (registered as "coming soon")
+modules (each a Django app; may depend on core and read the item bank — the
+content spine — but never import a sibling feature module)
+ ├─ itembank    ← built (module 1)
+ ├─ formatting  ← built (module 2)
+ └─ paper_mcq, online_exam, blueprint  ← planned (shown as "coming soon")
 ```
 
 **Module contract.** A module:
@@ -114,6 +116,31 @@ DTD/entity fetches — which blocks billion-laughs and XXE/SSRF. There's a test
 asserts it's rejected. Upload size is capped. This matters now (untrusted
 uploads) and sets the pattern for later modules that ingest files.
 
+## Paper formatting module (module 2)
+
+Assembles an exam paper from bank questions (Paper → Sections → placed
+questions, with optional per-paper marks overrides) and renders two PDFs: the
+candidate question paper and a staff marking scheme.
+
+**How the "sandboxed LaTeX" constraint is met here: there is no LaTeX.** The
+PDF builder (`formatting/pdf.py`) is pure-Python ReportLab — no subprocess, no
+shell, no external compiler, no network, fully deterministic. The constraint
+exists to contain the risk of compiling user-influenced markup server-side;
+this module eliminates that risk class instead of containing it. LaTeX first
+genuinely enters the system with the Paper MCQ module (AMC requires it), where
+it will run inside AMC's own sandboxed, separate-process container.
+
+**Templates are named slots, per the hard constraint.** A `PaperTemplate` is a
+row of data — institution name, subtitle, footer text, default instructions,
+font choice, paper size. No file uploads, nothing executable, and every slot
+value plus all question text is XML-escaped before it reaches the layout
+engine (covered by a test that feeds hostile markup).
+
+**Marking-scheme separation.** The candidate PDF provably never contains model
+answers or the answer key — asserted by tests on the rendered bytes, since
+leaking a marking guide into a printed exam is the worst failure mode this
+module has.
+
 ## Where the not-yet-built hard constraints live
 
 These modules aren't built yet, but the design already reserves the right shape
@@ -159,9 +186,26 @@ so they can't be "bolted on wrong" later:
 4. **Custom email `User` from day one.** Adding it later forces a painful
    migration, so it's in `0001`. *Affects: timeline — a minute now vs. a
    migration headache later.*
+5. **PDF engine: ReportLab (pure Python) over server-side LaTeX or
+   HTML-to-PDF.** LaTeX would demand the full sandbox apparatus (container, no
+   shell-escape, resource limits) plus a ~1 GB TeX distribution in every
+   deployment; WeasyPrint needs system C libraries (Pango/Cairo) that
+   complicate `pip install` for non-developers. ReportLab installs everywhere
+   as a wheel, runs in-process with zero attack surface from external
+   compilers, and its output is deterministic. *Affects: security (eliminates
+   the LaTeX risk class in this module), cost (no heavyweight runtime), and
+   timeline.* Trade-off: no LaTeX-grade math typesetting in formatted papers
+   yet; if that becomes a requirement it will be added via the same sandboxed
+   LaTeX service that Paper MCQ will already need — not by weakening this
+   module.
+6. **Marking scheme as a first-class second output.** The same paper renders a
+   candidate PDF and a staff PDF, and tests assert answers never reach the
+   candidate version. *Affects: security/correctness of the product's core
+   promise.*
 
 ## Testing
 
-`python -m pytest -q` runs the suite (20 tests). It's deliberately weighted
+`python -m pytest -q` runs the suite (35 tests). It's deliberately weighted
 toward the guarantees that are expensive to get wrong: cross-tenant isolation,
-plan gating, and QTI round-trip + import safety.
+plan gating, QTI round-trip + import safety, and candidate/marking-scheme
+separation in generated PDFs.

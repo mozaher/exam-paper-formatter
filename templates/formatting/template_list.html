@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Paper templates · Exam Platform{% endblock %}
+{% block content %}
+<div class="row spread">
+  <div>
+    <h1>Paper templates</h1>
+    <p class="sub">Institutional branding as named slots: name, instructions, footer, font, paper size.
+       Papers without a template use a plain built-in default.</p>
+  </div>
+  <a class="btn" href="{% url 'formatting:template_create' %}">+ New template</a>
+</div>
+
+<div class="panel">
+  {% if templates %}
+  <table>
+    <thead><tr><th>Name</th><th>Institution</th><th>Font</th><th>Size</th><th>Papers</th><th></th></tr></thead>
+    <tbody>
+      {% for t in templates %}
+      <tr>
+        <td><a href="{% url 'formatting:template_edit' t.pk %}">{{ t.name }}</a></td>
+        <td>{{ t.institution_name }}</td>
+        <td>{{ t.get_font_display }}</td>
+        <td>{{ t.get_paper_size_display }}</td>
+        <td>{{ t.papers.count }}</td>
+        <td style="text-align:right">
+          <form method="post" action="{% url 'formatting:template_delete' t.pk %}" style="margin:0"
+                onsubmit="return confirm('Delete this template? Papers using it fall back to the built-in default.')">
+            {% csrf_token %}<button class="btn ghost small" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No templates yet. Papers will use a plain built-in default until you add one.</div>
+  {% endif %}
+</div>
+<p><a href="{% url 'formatting:paper_list' %}">← Back to papers</a></p>
+{% endblock %}

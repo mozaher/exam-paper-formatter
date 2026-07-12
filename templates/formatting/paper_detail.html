@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ paper.title }} · Exam Platform{% endblock %}
+{% block content %}
+<div class="row spread">
+  <div>
+    <h1>{{ paper.title }}</h1>
+    <div class="pill-row">
+      {% if paper.course_code %}<span class="badge">{{ paper.course_code }}</span>{% endif %}
+      {% if paper.exam_date %}<span class="badge">{{ paper.exam_date|date:"j M Y" }}</span>{% endif %}
+      {% if paper.duration_minutes %}<span class="badge">{{ paper.duration_display }}</span>{% endif %}
+      <span class="badge published">{{ paper.total_marks|floatformat:"-2" }} marks total</span>
+      <span class="badge">{{ paper.template|default:"Built-in template" }}</span>
+    </div>
+  </div>
+  <div class="row">
+    <a class="btn" href="{% url 'formatting:paper_pdf' paper.pk %}" target="_blank">Question paper PDF</a>
+    <a class="btn secondary" href="{% url 'formatting:paper_marking_pdf' paper.pk %}" target="_blank">Marking scheme PDF</a>
+    <a class="btn ghost" href="{% url 'formatting:paper_edit' paper.pk %}">Edit details</a>
+  </div>
+</div>
+
+{% for entry in sections_data %}
+<div class="panel">
+  <div class="row spread">
+    <h2 style="margin:0">{{ entry.section.title }}</h2>
+    <div class="row">
+      <form method="post" action="{% url 'formatting:section_move' entry.section.pk %}" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="direction" value="up">
+        <button class="btn ghost small" type="submit" title="Move section up">↑</button>
+      </form>
+      <form method="post" action="{% url 'formatting:section_move' entry.section.pk %}" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="direction" value="down">
+        <button class="btn ghost small" type="submit" title="Move section down">↓</button>
+      </form>
+      <a class="btn small" href="{% url 'formatting:question_picker' entry.section.pk %}">+ Add questions</a>
+      <form method="post" action="{% url 'formatting:section_delete' entry.section.pk %}" style="margin:0"
+            onsubmit="return confirm('Remove this section and its question placements?')">
+        {% csrf_token %}<button class="btn ghost small" type="submit">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% if entry.section.instructions %}<p class="muted">{{ entry.section.instructions }}</p>{% endif %}
+
+  {% if entry.rows %}
+  <table>
+    <thead><tr><th style="width:44px">#</th><th>Question</th><th>Type</th><th style="width:150px">Marks</th><th style="width:150px"></th></tr></thead>
+    <tbody>
+      {% for row in entry.rows %}
+      <tr>
+        <td>{{ row.num }}</td>
+        <td>
+          <a href="{% url 'itembank:item_detail' row.pq.item.pk %}">{{ row.pq.item.title }}</a>
+          {% if row.pq.item.status == 'archived' %}<span class="badge">archived</span>{% endif %}
+          <div class="muted" style="font-size:13px">{{ row.pq.item.body|truncatechars:90 }}</div>
+        </td>
+        <td><span class="badge {{ row.pq.item.item_type }}">{{ row.pq.item.get_item_type_display }}</span></td>
+        <td>
+          <form method="post" action="{% url 'formatting:pq_marks' row.pq.pk %}" class="row" style="margin:0;gap:4px;flex-wrap:nowrap">
+            {% csrf_token %}
+            <input type="number" step="0.5" min="0" name="marks_override"
+                   value="{{ row.pq.marks_override|floatformat:'-2'|default:'' }}"
+                   placeholder="{{ row.pq.item.marks|floatformat:'-2' }}" style="width:70px">
+            <button class="btn ghost small" type="submit">Set</button>
+          </form>
+        </td>
+        <td style="text-align:right;white-space:nowrap">
+          <form method="post" action="{% url 'formatting:pq_move' row.pq.pk %}" style="display:inline">
+            {% csrf_token %}<input type="hidden" name="direction" value="up">
+            <button class="btn ghost small" type="submit" title="Move up">↑</button>
+          </form>
+          <form method="post" action="{% url 'formatting:pq_move' row.pq.pk %}" style="display:inline">
+            {% csrf_token %}<input type="hidden" name="direction" value="down">
+            <button class="btn ghost small" type="submit" title="Move down">↓</button>
+          </form>
+          <form method="post" action="{% url 'formatting:pq_remove' row.pq.pk %}" style="display:inline">
+            {% csrf_token %}<button class="btn ghost small" type="submit" title="Remove">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No questions yet — <a href="{% url 'formatting:question_picker' entry.section.pk %}">add some from the bank</a>.</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div class="panel">
+  <h2 style="margin-top:0">Add a section</h2>
+  <form method="post" action="{% url 'formatting:section_create' paper.pk %}">
+    {% csrf_token %}
+    <div class="row">
+      <div style="flex:1">
+        <label for="{{ section_form.title.id_for_label }}">Title</label>
+        {{ section_form.title }}
+      </div>
+      <div style="flex:2">
+        <label for="{{ section_form.instructions.id_for_label }}">Section instructions (optional)</label>
+        {{ section_form.instructions }}
+      </div>
+    </div>
+    <div style="margin-top:12px;"><button class="btn secondary" type="submit">Add section</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="row spread">
+    <span class="muted">Danger zone</span>
+    <form method="post" action="{% url 'formatting:paper_delete' paper.pk %}"
+          onsubmit="return confirm('Delete this paper? The bank questions themselves are not affected.')">
+      {% csrf_token %}<button class="btn danger small" type="submit">Delete paper</button>
+    </form>
+  </div>
+</div>
+<p><a href="{% url 'formatting:paper_list' %}">← Back to papers</a></p>
+{% endblock %}
