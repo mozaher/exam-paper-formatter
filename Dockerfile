@@ -8,8 +8,14 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+# texlive + libreoffice-writer power the "template from sample" flow
+# (.tex/.docx uploads compiled in the app's sandbox — see formatting/sandbox.py).
+# They add ~1 GB to the image; remove them if you only need .pdf samples.
+# util-linux provides `unshare` for the compile sandbox's network isolation.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev \
+    build-essential libpq-dev util-linux \
+    texlive-latex-base texlive-latex-recommended \
+    libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

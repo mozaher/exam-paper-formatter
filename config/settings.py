@@ -131,7 +131,10 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = "DENY"
+
+# SAMEORIGIN (not DENY): the template review page embeds same-origin PDF
+# previews in iframes for the side-by-side comparison.
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # Billing: the "manual" provider lets an org owner switch plans from the
 # billing page when self-serve is on (dev/demo). A payment provider (Stripe)

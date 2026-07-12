@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.db.models import DecimalField, F, Sum
@@ -32,6 +34,22 @@ class PaperTemplate(TenantOwnedModel):
     )
     font = models.CharField(max_length=8, choices=FONT_CHOICES, default="serif")
     paper_size = models.CharField(max_length=8, choices=SIZE_CHOICES, default="A4")
+
+    # Confirmed formatting spec (the "theme schema"): bounded numeric layout
+    # values consumed by the deterministic renderer. Set either by defaults,
+    # or by the extract-from-sample flow after staff visually confirm. Staff
+    # never edit these numbers directly — they use the plain-language
+    # adjustment controls, which write back through spec.clamp_spec().
+    font_size_pt = models.DecimalField(max_digits=4, decimal_places=1, default=11)
+    line_spacing = models.DecimalField(max_digits=4, decimal_places=2, default=Decimal("1.35"))
+    para_spacing_pt = models.DecimalField(max_digits=4, decimal_places=1, default=6)
+    margin_left_mm = models.DecimalField(max_digits=4, decimal_places=1, default=20)
+    margin_right_mm = models.DecimalField(max_digits=4, decimal_places=1, default=20)
+    margin_top_mm = models.DecimalField(max_digits=4, decimal_places=1, default=18)
+    margin_bottom_mm = models.DecimalField(max_digits=4, decimal_places=1, default=20)
+    answer_base_mm = models.DecimalField(max_digits=4, decimal_places=1, default=15)
+    answer_per_mark_mm = models.DecimalField(max_digits=4, decimal_places=1, default=18)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,6 +58,33 @@ class PaperTemplate(TenantOwnedModel):
 
     def __str__(self):
         return self.name
+
+
+class TemplateDraft(TenantOwnedModel):
+    """A pending template-from-sample extraction awaiting visual review.
+
+    Holds ONLY the rendered PDF of the upload (for the side-by-side view)
+    and the derived working spec. The uploaded source file itself is never
+    written to storage — it lives in memory during compilation and is gone.
+    Drafts are deleted on confirm/cancel and swept when stale.
+    """
+
+    name = models.CharField(max_length=120)
+    source_filename = models.CharField(max_length=255, blank=True)
+    rendered_pdf = models.BinaryField()
+    spec = models.JSONField(default=dict)
+    confidence = models.JSONField(default=dict)   # field -> bool
+    notes = models.JSONField(default=list)        # plain-language uncertainty notes
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Draft: {self.name}"
 
 
 class Paper(TenantOwnedModel):

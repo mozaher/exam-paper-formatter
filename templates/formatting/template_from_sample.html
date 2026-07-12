@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Template from sample · Exam Platform{% endblock %}
+{% block content %}
+<h1>Create a template from a sample document</h1>
+<p class="sub">Upload a Word, LaTeX or PDF file containing a few <strong>dummy questions</strong>
+   formatted the way your institution likes its exam papers.</p>
+
+<div class="panel">
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+    {{ form.name }}
+    <p class="help">{{ form.name.help_text }}</p>
+
+    <label for="{{ form.file.id_for_label }}">{{ form.file.label }}</label>
+    {{ form.file }}
+    <p class="help">{{ form.file.help_text }}</p>
+    {% if form.file.errors %}<ul class="errorlist">{% for e in form.file.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    {% if form.non_field_errors %}<ul class="errorlist">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+    <div style="margin-top:16px;"><button class="btn" type="submit">Analyse formatting</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">How it works</h2>
+  <ol>
+    <li>Your file is rendered in a locked-down sandbox (no network, strict time and
+        memory limits) and measured: fonts, margins, line and paragraph spacing.</li>
+    <li>Detected regions are labelled — question text, marks like “[5 marks]”, and the
+        blank answer space beneath them — to learn how much space you leave per mark.</li>
+    <li>If everything is clear, your template is created immediately. If anything was
+        ambiguous, you'll see a side-by-side comparison and simple controls to fix it —
+        no technical settings involved.</li>
+  </ol>
+  <p class="help">
+    <strong>Tips for best results:</strong> include 2–3 questions with different marks
+    (e.g. [2 marks] and [5 marks]) followed by the blank space you'd leave for answers,
+    and at least one paragraph long enough to wrap over several lines.
+    <br><strong>Privacy:</strong> the uploaded file is analysed and immediately
+    discarded — only the confirmed formatting settings are stored.
+  </p>
+</div>
+<p><a href="{% url 'formatting:template_list' %}">← Back to templates</a></p>
+{% endblock %}

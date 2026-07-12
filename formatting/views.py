@@ -1,17 +1,21 @@
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 from django.contrib import messages
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views import View
 
 from core.access import ModuleRequiredMixin
 from itembank.models import Item, Topic
 
-from . import pdf
-from .forms import PaperForm, PaperTemplateForm, SectionForm
-from .models import Paper, PaperQuestion, PaperTemplate, Section
+from . import extract, labeling, pdf, preview, sandbox
+from . import spec as spec_module
+from .forms import PaperForm, PaperTemplateForm, SectionForm, TemplateSampleUploadForm
+from .models import Paper, PaperQuestion, PaperTemplate, Section, TemplateDraft
 
 
 class FormattingMixin(ModuleRequiredMixin):
@@ -356,4 +360,163 @@ class TemplateDeleteView(FormattingMixin, View):
         template.delete()
         note = f" ({n} paper{'s' if n != 1 else ''} now use the built-in default)" if n else ""
         messages.success(request, f"Template deleted{note}.")
+        return redirect("formatting:template_list")
+
+
+class TemplatePreviewPdfView(FormattingMixin, View):
+    """Sample paper rendered with a saved template's confirmed spec."""
+
+    def get(self, request, pk):
+        template = get_object_or_404(PaperTemplate.objects.for_org(request.org), pk=pk)
+        data = preview.build_sample_pdf(
+            spec_module.spec_from_template(template),
+            institution_name=template.institution_name,
+            subtitle=template.subtitle,
+            footer_text=template.footer_text,
+        )
+        return HttpResponse(data, content_type="application/pdf")
+
+
+# ---------------------------------------------------------------------------
+# Template-by-example: upload a sample -> extract -> visual review -> confirm.
+# The uploaded source file is processed in memory and never stored; only the
+# rendered PDF is kept on the draft for the side-by-side, and the draft is
+# deleted on confirm/cancel.
+# ---------------------------------------------------------------------------
+
+def _get_draft(request, pk):
+    return get_object_or_404(TemplateDraft.objects.for_org(request.org), pk=pk)
+
+
+def _create_template_from_spec(org, name, layout):
+    template = PaperTemplate(
+        org=org,
+        name=name[:120],
+        institution_name=org.name,
+    )
+    spec_module.apply_spec_to_template(template, layout)
+    template.save()
+    return template
+
+
+class TemplateFromSampleView(FormattingMixin, View):
+    def get(self, request):
+        return render(
+            request,
+            "formatting/template_from_sample.html",
+            {"form": TemplateSampleUploadForm()},
+        )
+
+    def post(self, request):
+        form = TemplateSampleUploadForm(request.POST, request.FILES)
+        if not form.is_valid():
+            return render(
+                request, "formatting/template_from_sample.html", {"form": form}
+            )
+        upload = form.cleaned_data["file"]
+        source = upload.read()  # in memory only; never written to storage
+
+        try:
+            rendered = sandbox.render_upload(upload.name, source)
+        except sandbox.CompileError as exc:
+            form.add_error("file", str(exc))
+            return render(
+                request, "formatting/template_from_sample.html", {"form": form}
+            )
+        finally:
+            del source
+
+        try:
+            measurements = extract.extract_measurements(rendered)
+        except extract.ExtractError as exc:
+            form.add_error("file", str(exc))
+            return render(
+                request, "formatting/template_from_sample.html", {"form": form}
+            )
+
+        labels = labeling.get_labeler().label(measurements)
+        layout, confidence, notes = spec_module.derive_spec(measurements, labels)
+        name = form.cleaned_data["name"].strip() or Path(upload.name).stem
+
+        if all(confidence.values()):
+            template = _create_template_from_spec(request.org, name, layout)
+            messages.success(
+                request,
+                f"Template “{template.name}” created from your sample. Every "
+                "formatting value was extracted unambiguously, so the review "
+                "step was skipped — use Preview to double-check the result.",
+            )
+            return redirect("formatting:template_list")
+
+        # Something was ambiguous: keep a draft for visual review.
+        TemplateDraft.objects.for_org(request.org).filter(
+            created_at__lt=timezone.now() - timedelta(days=7)
+        ).delete()
+        draft = TemplateDraft.objects.create(
+            org=request.org,
+            name=name,
+            source_filename=upload.name[:255],
+            rendered_pdf=rendered,
+            spec=layout,
+            confidence=confidence,
+            notes=notes,
+            created_by=request.user,
+        )
+        return redirect("formatting:template_review", pk=draft.pk)
+
+
+class TemplateReviewView(FormattingMixin, View):
+    def get(self, request, pk):
+        draft = _get_draft(request, pk)
+        return render(
+            request,
+            "formatting/template_review.html",
+            {"draft": draft, "adjustments": spec_module.ADJUSTMENTS},
+        )
+
+
+class DraftOriginalPdfView(FormattingMixin, View):
+    def get(self, request, pk):
+        draft = _get_draft(request, pk)
+        return HttpResponse(bytes(draft.rendered_pdf), content_type="application/pdf")
+
+
+class DraftPreviewPdfView(FormattingMixin, View):
+    def get(self, request, pk):
+        draft = _get_draft(request, pk)
+        data = preview.build_sample_pdf(
+            draft.spec, institution_name=request.org.name
+        )
+        return HttpResponse(data, content_type="application/pdf")
+
+
+class DraftAdjustView(FormattingMixin, View):
+    def post(self, request, pk):
+        draft = _get_draft(request, pk)
+        control = request.POST.get("control", "")
+        direction = request.POST.get("direction", "")
+        if control in spec_module.ADJUSTMENTS and direction in ("less", "more"):
+            draft.spec = spec_module.apply_adjustment(draft.spec, control, direction)
+            draft.save(update_fields=["spec"])
+        return redirect("formatting:template_review", pk=draft.pk)
+
+
+class DraftConfirmView(FormattingMixin, View):
+    def post(self, request, pk):
+        draft = _get_draft(request, pk)
+        template = _create_template_from_spec(request.org, draft.name, draft.spec)
+        draft.delete()
+        messages.success(
+            request,
+            f"Template “{template.name}” saved. New papers can use it right away; "
+            "edit it to set the institution name and footer text.",
+        )
+        return redirect("formatting:template_list")
+
+
+class DraftCancelView(FormattingMixin, View):
+    def post(self, request, pk):
+        draft = _get_draft(request, pk)
+        draft.delete()
+        messages.info(request, "Discarded — nothing was saved.")
         return redirect("formatting:template_list")

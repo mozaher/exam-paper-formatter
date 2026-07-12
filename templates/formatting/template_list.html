@@ -7,7 +7,10 @@
     <p class="sub">Institutional branding as named slots: name, instructions, footer, font, paper size.
        Papers without a template use a plain built-in default.</p>
   </div>
-  <a class="btn" href="{% url 'formatting:template_create' %}">+ New template</a>
+  <div class="row">
+    <a class="btn" href="{% url 'formatting:template_from_sample' %}">+ From sample file</a>
+    <a class="btn secondary" href="{% url 'formatting:template_create' %}">+ Blank template</a>
+  </div>
 </div>
 
 <div class="panel">
@@ -22,8 +25,9 @@
         <td>{{ t.get_font_display }}</td>
         <td>{{ t.get_paper_size_display }}</td>
         <td>{{ t.papers.count }}</td>
-        <td style="text-align:right">
-          <form method="post" action="{% url 'formatting:template_delete' t.pk %}" style="margin:0"
+        <td style="text-align:right;white-space:nowrap">
+          <a class="btn ghost small" href="{% url 'formatting:template_preview_pdf' t.pk %}" target="_blank">Preview</a>
+          <form method="post" action="{% url 'formatting:template_delete' t.pk %}" style="display:inline"
                 onsubmit="return confirm('Delete this template? Papers using it fall back to the built-in default.')">
             {% csrf_token %}<button class="btn ghost small" type="submit">Delete</button>
           </form>

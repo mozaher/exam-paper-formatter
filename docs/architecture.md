@@ -122,19 +122,55 @@ Assembles an exam paper from bank questions (Paper → Sections → placed
 questions, with optional per-paper marks overrides) and renders two PDFs: the
 candidate question paper and a staff marking scheme.
 
-**How the "sandboxed LaTeX" constraint is met here: there is no LaTeX.** The
-PDF builder (`formatting/pdf.py`) is pure-Python ReportLab — no subprocess, no
-shell, no external compiler, no network, fully deterministic. The constraint
-exists to contain the risk of compiling user-influenced markup server-side;
-this module eliminates that risk class instead of containing it. LaTeX first
-genuinely enters the system with the Paper MCQ module (AMC requires it), where
-it will run inside AMC's own sandboxed, separate-process container.
+**Production rendering has no LaTeX.** The PDF builder (`formatting/pdf.py`)
+is pure-Python ReportLab — no subprocess, no shell, no external compiler, no
+network, fully deterministic. Every exam paper ever generated comes from this
+renderer consuming a bounded formatting spec plus named content slots.
 
 **Templates are named slots, per the hard constraint.** A `PaperTemplate` is a
-row of data — institution name, subtitle, footer text, default instructions,
-font choice, paper size. No file uploads, nothing executable, and every slot
+row of data — text slots (institution name, subtitle, footer, instructions)
+plus a bounded numeric layout spec (font, sizes, margins, spacing, the
+marks-to-answer-space rule). Nothing executable is ever stored, and every slot
 value plus all question text is XML-escaped before it reaches the layout
 engine (covered by a test that feeds hostile markup).
+
+### Template-by-example (formatting spec extraction)
+
+Staff can create a template by uploading a sample document (.docx, .tex, or
+.pdf) containing dummy questions in their institution's style:
+
+1. **Sandboxed compile** (`formatting/sandbox.py`) — the hard constraint,
+   implemented and tested: pdflatex runs with `-no-shell-escape` and paranoid
+   file access (`openin_any/openout_any=p`), LibreOffice runs headless with a
+   throwaway profile; both run with no shell, an allow-listed environment, CPU/
+   memory/file-size/process rlimits, a wall-clock kill, inside a fresh network
+   namespace (`unshare --net`), in a temp dir deleted afterwards. Tests prove
+   `\write18` leaves no side effects, `\input{/etc/passwd}` fails, and infinite
+   loops are killed.
+2. **Geometry extraction** (`formatting/extract.py`) — fonts, margins, line and
+   paragraph spacing, and blank regions are measured from the *rendered PDF's*
+   glyph geometry (pdfminer), never by interpreting the uploaded markup. Page
+   furniture (page numbers) is filtered; unmeasurable margins fall back with a
+   note instead of a wrong guess.
+3. **Semantic labeling** (`formatting/labeling.py`) — regions are labeled
+   (question text, marks indicators, blank answer space) and marks⇄space pairs
+   yield a fitted marks-to-answer-space rule. The labeler is a pluggable step:
+   the default is a deterministic heuristic with per-field confidence; an LLM
+   labeler is a documented integration point (no API key exists in this
+   deployment). Either way the model/heuristic only ever proposes labels — the
+   spec, review, and rendering stay deterministic.
+4. **Reviewable spec** (`formatting/spec.py`) — extraction yields a bounded
+   spec plus per-field confidence and plain-language notes. If every field is
+   unambiguous the template is created directly (review skipped); otherwise
+   staff see a **visual side-by-side** — their rendered upload vs. a sample
+   paper generated from the derived spec — with one-click approval and
+   plain-language adjustment controls (text size, line spacing, margins,
+   answer space, font) that re-render live. Raw spec values are never shown.
+5. **Nothing uploaded is kept.** The source file exists only in memory during
+   compilation. The rendered PDF lives on a `TemplateDraft` row solely for the
+   side-by-side and is deleted on confirm/cancel (stale drafts are swept).
+   Only the confirmed spec is stored, and only the deterministic renderer
+   consumes it.
 
 **Marking-scheme separation.** The candidate PDF provably never contains model
 answers or the answer key — asserted by tests on the rendered bytes, since
@@ -151,16 +187,15 @@ so they can't be "bolted on wrong" later:
   never linked in-process or via FFI. The `Dockerfile` header already flags that
   AMC does not belong in this Python image; it will be its own
   service/container. This is a licensing boundary as much as an engineering one.
-- **Sandboxed LaTeX.** The formatting (and later paper-MCQ typesetting) modules
-  will compile LaTeX in a sandbox: no shell-escape, containerized, no network,
-  with CPU/memory/time limits. Users pick from a **fixed set of named template
-  slots**, not arbitrary uploaded LaTeX/Word — templates are data filling known
-  slots, never executable input.
-- **AI proposes, a deterministic step executes.** The blueprint generator (and
-  any AI-assisted selection/formatting) will emit a **reviewable spec** (e.g. a
-  table of specification as data) that a human can approve and a deterministic
-  builder then executes — the model never directly emits the graded/printed
-  artifact. Consistency and auditability over saving a step.
+- **Sandboxed LaTeX — now implemented** (`formatting/sandbox.py`, see above):
+  no shell-escape, no network, resource/time limits, isolated temp dirs. Any
+  future LaTeX need (e.g. AMC typesetting in Paper MCQ) must go through this
+  runner or AMC's own container — never a bare compiler invocation.
+- **AI proposes, a deterministic step executes — pattern now established** by
+  the template-by-example flow (labels → spec → human confirmation →
+  deterministic render). The blueprint generator will follow the same shape:
+  the model emits a reviewable table-of-specification, a deterministic step
+  fills it from the bank, flagging gaps rather than guessing.
 
 ## Forks in the road resolved so far
 
@@ -186,18 +221,16 @@ so they can't be "bolted on wrong" later:
 4. **Custom email `User` from day one.** Adding it later forces a painful
    migration, so it's in `0001`. *Affects: timeline — a minute now vs. a
    migration headache later.*
-5. **PDF engine: ReportLab (pure Python) over server-side LaTeX or
-   HTML-to-PDF.** LaTeX would demand the full sandbox apparatus (container, no
-   shell-escape, resource limits) plus a ~1 GB TeX distribution in every
-   deployment; WeasyPrint needs system C libraries (Pango/Cairo) that
-   complicate `pip install` for non-developers. ReportLab installs everywhere
-   as a wheel, runs in-process with zero attack surface from external
-   compilers, and its output is deterministic. *Affects: security (eliminates
-   the LaTeX risk class in this module), cost (no heavyweight runtime), and
-   timeline.* Trade-off: no LaTeX-grade math typesetting in formatted papers
-   yet; if that becomes a requirement it will be added via the same sandboxed
-   LaTeX service that Paper MCQ will already need — not by weakening this
-   module.
+5. **PDF engine: ReportLab (pure Python) for all production rendering.**
+   WeasyPrint needs system C libraries (Pango/Cairo) that complicate
+   `pip install` for non-developers; LaTeX-as-renderer would put a compiler in
+   the hot path of every exam. ReportLab installs everywhere as a wheel, runs
+   in-process, and its output is deterministic. LaTeX/LibreOffice exist in the
+   stack only to render *uploaded samples once* during template extraction —
+   inside the sandbox runner, never for production paper generation. Compilers
+   are optional at deploy time: without them, staff can still upload .pdf
+   samples (extraction is identical). Trade-off: no LaTeX-grade math
+   typesetting in formatted papers yet.
 6. **Marking scheme as a first-class second output.** The same paper renders a
    candidate PDF and a staff PDF, and tests assert answers never reach the
    candidate version. *Affects: security/correctness of the product's core

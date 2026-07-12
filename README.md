@@ -20,7 +20,8 @@ as "coming soon" and will be built in order, each with its own report.
 | **Billing** | Plans (Free / Pro / Institution) gate which modules and limits an org gets. A "manual" billing provider lets admins switch plans instantly; a real payment provider (Stripe) plugs in behind the same interface. |
 | **Item bank** | Author **MCQ** and **essay** questions, tag them with topic, difficulty, cognitive level (Bloom) and marks. Filter/search. Organize topics with one level of subtopics. |
 | **Portability** | Import and export the whole bank as **QTI 3.0** (an IMS content package). Your content is never locked in. |
-| **Paper formatting** | Assemble exam papers from bank questions into sections, set per-paper marks, and download two print-ready PDFs: the **question paper** (with ruled answer space for essays) and a staff-only **marking scheme** (correct answers + marking guides). Institutional branding comes from templates that are a fixed set of named slots — never uploaded LaTeX/Word files. |
+| **Paper formatting** | Assemble exam papers from bank questions into sections, set per-paper marks, and download two print-ready PDFs: the **question paper** (with ruled answer space for essays) and a staff-only **marking scheme** (correct answers + marking guides). |
+| **Templates by example** | Upload a Word/LaTeX/PDF sample of dummy questions in your house style. It's rendered in a locked-down sandbox, measured (fonts, margins, spacing, answer-space-per-mark), and turned into a reviewable formatting spec — confirmed with a visual side-by-side and plain-language adjustments, never raw settings. The upload itself is never stored; all future papers render deterministically from the confirmed spec. |
 
 ---
 
@@ -66,7 +67,7 @@ http://127.0.0.1:8000/signup/.
 python -m pytest -q
 ```
 
-You should see **35 passing tests**. The ones that back up the headline claims:
+You should see **60 passing tests**. The ones that back up the headline claims:
 
 - `core/tests/test_tenancy.py` — one org **cannot** read or edit another org's
   questions (returns 404, no data leak); plan gating and item limits are
@@ -81,6 +82,21 @@ You should see **35 passing tests**. The ones that back up the headline claims:
   (or script) the PDF builder.
 - `formatting/tests/test_papers.py` — papers, sections, marks overrides, and
   cross-tenant isolation for papers and question-picking.
+- `formatting/tests/test_sandbox.py` — the compile sandbox: LaTeX shell-escape
+  attempts leave no side effects, reads outside the job dir fail, runaway
+  documents are killed by resource limits.
+- `formatting/tests/test_extraction.py` — renders a PDF with a known
+  formatting spec and asserts the extraction pipeline measures it back
+  (fonts, margins, line spacing, and the marks-to-answer-space rule).
+- `formatting/tests/test_template_flow.py` — ambiguous uploads go to visual
+  review; confident ones skip it; adjustments are bounded; confirming stores
+  only the spec and deletes the draft.
+
+To try template-by-example yourself: **Paper formatting → Templates →
++ From sample file**, then upload `formatting/tests/fixtures/sample.tex` (or
+`sample.docx`, or any PDF of an exam in your house style). Compiling .tex
+needs `texlive-latex-base texlive-latex-recommended` installed; .docx needs
+`libreoffice-writer`; **.pdf samples need nothing extra**.
 
 ### Do the same round-trip from the command line
 

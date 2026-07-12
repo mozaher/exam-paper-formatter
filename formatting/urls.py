@@ -27,4 +27,12 @@ urlpatterns = [
     path("templates/new/", views.TemplateCreateView.as_view(), name="template_create"),
     path("templates/<int:pk>/edit/", views.TemplateUpdateView.as_view(), name="template_edit"),
     path("templates/<int:pk>/delete/", views.TemplateDeleteView.as_view(), name="template_delete"),
+    path("templates/<int:pk>/preview.pdf", views.TemplatePreviewPdfView.as_view(), name="template_preview_pdf"),
+    path("templates/from-sample/", views.TemplateFromSampleView.as_view(), name="template_from_sample"),
+    path("drafts/<int:pk>/", views.TemplateReviewView.as_view(), name="template_review"),
+    path("drafts/<int:pk>/original.pdf", views.DraftOriginalPdfView.as_view(), name="draft_original_pdf"),
+    path("drafts/<int:pk>/preview.pdf", views.DraftPreviewPdfView.as_view(), name="draft_preview_pdf"),
+    path("drafts/<int:pk>/adjust/", views.DraftAdjustView.as_view(), name="draft_adjust"),
+    path("drafts/<int:pk>/confirm/", views.DraftConfirmView.as_view(), name="draft_confirm"),
+    path("drafts/<int:pk>/cancel/", views.DraftCancelView.as_view(), name="draft_cancel"),
 ]

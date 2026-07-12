@@ -1,6 +1,35 @@
+from pathlib import Path
+
 from django import forms
 
 from .models import Paper, PaperTemplate, Section
+
+SAMPLE_EXTENSIONS = (".tex", ".docx", ".pdf")
+SAMPLE_MAX_BYTES = 5 * 1024 * 1024
+
+
+class TemplateSampleUploadForm(forms.Form):
+    name = forms.CharField(
+        max_length=120,
+        required=False,
+        label="Template name",
+        help_text="Optional — defaults to the file name.",
+    )
+    file = forms.FileField(
+        label="Sample document",
+        help_text="A .docx, .tex or .pdf file of dummy questions showing your "
+        "desired formatting. It is analysed and immediately discarded — "
+        "never stored.",
+    )
+
+    def clean_file(self):
+        f = self.cleaned_data["file"]
+        suffix = Path(f.name).suffix.lower()
+        if suffix not in SAMPLE_EXTENSIONS:
+            raise forms.ValidationError("Upload a .docx, .tex or .pdf file.")
+        if f.size > SAMPLE_MAX_BYTES:
+            raise forms.ValidationError("File too large (5 MB limit).")
+        return f
 
 
 class PaperTemplateForm(forms.ModelForm):
